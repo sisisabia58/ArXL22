@@ -49,12 +49,26 @@ msbuild Arixcel.sln /p:Configuration=Release /p:Platform="Any CPU"
 
 > **Note:** The `ArixcelExplorer` project ships as a class library scaffold compatible with conversion to a full VSTO Excel Add-in in Visual Studio. Open the solution on Windows, use **Add > New Item > VSTO Add-in** migration or create a new Excel VSTO project and reference these projects.
 
-## Install / sideload
+## Install / sideload (Windows)
 
-1. Build `ArixcelExplorer` and register the COM add-in (VSTO publish or manual registry — see VS Publish wizard).
-2. Import `src/ArixcelShortcuts/ArixcelShortcuts.bas` into an Excel `.xlam` add-in, or compile the companion add-in.
-3. Enable both add-ins under **File → Options → Add-ins → COM Add-ins** and **Excel Add-ins**.
-4. Confirm the **Arixcel** ribbon tab appears.
+The `ArixcelExplorer` project is a full Excel VSTO add-in. One-command sideload:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+# First time only (admin): installs VSTO Runtime + VS Build Tools Office workload
+.\scripts\Install-ArixcelPrerequisites.ps1
+# Build, register COM add-in, create .xlam companion
+.\scripts\Invoke-ArixcelSideload.ps1
+```
+
+Or in Visual Studio 2022:
+
+1. Open `Arixcel.sln`
+2. Set **ArixcelExplorer** as startup project → **Build** (F6)
+3. Run `.\scripts\Register-ArixcelComAddIn.ps1` with paths to `bin\Release\ArixcelExplorer.vsto` and `.dll`
+4. Run `.\scripts\New-ArixcelShortcutsXlam.ps1` (imports `src/ArixcelShortcuts/ArixcelShortcuts.bas`)
+5. Restart Excel → **File → Options → Add-ins** → enable both COM add-ins and **ArixcelShortcuts**
+6. Confirm the **Arixcel** ribbon tab appears
 
 ### VBA companion
 

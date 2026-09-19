@@ -1,37 +1,32 @@
 using System;
-using System.Runtime.InteropServices;
 using ArixcelExplorer.ComApi;
 using ArixcelExplorer.Services;
-using ArixcelExplorer.Ribbon;
-using Excel = Microsoft.Office.Interop.Excel;
 
 namespace ArixcelExplorer;
 
-/// <summary>
-/// Excel add-in entry point. When converted to a full VSTO project in Visual Studio,
-/// this class derives from Microsoft.Office.Tools.AddInBase.
-/// </summary>
-[ComVisible(true)]
-public sealed class ThisAddIn
+public partial class ThisAddIn
 {
-    private Excel.Application? _application;
     private ArixcelComApi? _comApi;
 
-    public void Startup(Excel.Application application)
+    private void ThisAddIn_Startup(object sender, EventArgs e)
     {
-        _application = application;
-        AddInCoordinator.Initialize(application);
+        AddInCoordinator.Initialize(Application);
         _comApi = new ArixcelComApi();
     }
 
-    public void Shutdown()
+    private void ThisAddIn_Shutdown(object sender, EventArgs e)
     {
         AddInCoordinator.ClearFormulaMap();
-        _application = null;
         _comApi = null;
     }
 
-    public object CreateRibbonExtensibilityObject() => new ArixcelRibbon();
+    #region VSTO generated code
 
-    public object? GetComApi() => _comApi;
+    private void InternalStartup()
+    {
+        Startup += new EventHandler(ThisAddIn_Startup);
+        Shutdown += new EventHandler(ThisAddIn_Shutdown);
+    }
+
+    #endregion
 }
