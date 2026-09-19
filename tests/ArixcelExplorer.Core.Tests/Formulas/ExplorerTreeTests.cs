@@ -86,4 +86,10 @@ public sealed class ExplorerTreeTests
         object[] row = { 1d, 2d, 3d };
         Assert.Equal("1, 2, 3", TraceUtils.FormatTraceValue(row));
     }
+
+    [Fact]
+    public void Default_precedent_highlight_is_cyan()
+    {
+        Assert.Equal("#7FDBFF", ArixcelOptions.Default.PrecedentHighlight);
+    }
 }

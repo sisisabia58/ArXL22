@@ -48,6 +48,18 @@ public partial class ExplorerWindow : Window
         }
     }
 
+    public void RestoreKeyboardFocus()
+    {
+        Activate();
+        TreeGrid.Focus();
+        if (TreeGrid.SelectedItem != null)
+        {
+            var row = TreeGrid.ItemContainerGenerator.ContainerFromItem(TreeGrid.SelectedItem) as System.Windows.Controls.DataGridRow;
+            row?.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            TreeGrid.Focus();
+        }
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)

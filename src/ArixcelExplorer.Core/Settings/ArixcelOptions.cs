@@ -12,7 +12,7 @@ public sealed class ArixcelOptions
 {
     public ExplorerCloseBehavior CloseBehavior { get; set; } = ExplorerCloseBehavior.EnterKeepsSelection;
     public string OriginHighlight { get; set; } = "#F4C2C2";
-    public string PrecedentHighlight { get; set; } = "#0563C1";
+    public string PrecedentHighlight { get; set; } = "#7FDBFF";
     public string DependentHighlight { get; set; } = "#C6E5B3";
     public int MaxDependentsBeforeWarning { get; set; } = 500;
     public int TraceMaxDepth { get; set; } = 10;

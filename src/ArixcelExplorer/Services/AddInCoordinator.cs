@@ -85,10 +85,20 @@ public static class AddInCoordinator
             : CaptureActiveOrigin();
         var ownerId = Guid.NewGuid().ToString("N");
         var vm = new DependentsViewModel();
-        vm.NavigateRequested += row => _traceService.NavigateToAddress(row.Address);
+        DependentsWindow? window = null;
+        vm.NavigateRequested += row =>
+        {
+            if (string.IsNullOrWhiteSpace(row.Address)) return;
+            _traceService.NavigateToAddress(row.Address, stealFocus: false);
+            window?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                window.Activate();
+                window.RestoreKeyboardFocus();
+            }), System.Windows.Threading.DispatcherPriority.Input);
+        };
         vm.Load(entries, selected.Count == 1 ? selected[0].Address : $"{selected.Count} selected cells");
 
-        var window = new DependentsWindow(vm, _options.CloseBehavior);
+        window = new DependentsWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
         _highlightService.ApplyMany(ownerId, entries.Select(entry => entry.Address), _options.DependentHighlight);
@@ -169,17 +179,23 @@ public static class AddInCoordinator
             RootAddress = origin.OriginAddress,
             StatusText = "Explorer ready"
         };
+        ExplorerWindow? window = null;
         vm.NavigateRequested += row =>
         {
             if (string.IsNullOrWhiteSpace(row.Location)) return;
-            _traceService!.NavigateToAddress(row.Location);
+            _traceService!.NavigateToAddress(row.Location, stealFocus: false);
             _highlightService!.SetTransient(ownerId, row.Location, _options.PrecedentHighlight, origin.OriginAddress);
+            window?.Dispatcher.BeginInvoke(new Action(() =>
+            {
+                window.Activate();
+                window.RestoreKeyboardFocus();
+            }), System.Windows.Threading.DispatcherPriority.Input);
         };
         vm.LoadTree(tree, formula);
 
         _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
 
-        var window = new ExplorerWindow(vm, _options.CloseBehavior);
+        window = new ExplorerWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         ShowModeless(window);
     }

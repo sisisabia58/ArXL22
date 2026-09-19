@@ -74,7 +74,7 @@ public sealed class ExcelTraceService
         return new TraceBuilderResult { Rows = allRows, Truncated = truncated };
     }
 
-    public void NavigateToAddress(string address)
+    public void NavigateToAddress(string address, bool stealFocus = true)
     {
         if (string.IsNullOrWhiteSpace(address)) return;
         var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
@@ -91,9 +91,32 @@ public sealed class ExcelTraceService
         }
 
         if (sheet == null) return;
-        sheet.Activate();
         var target = sheet.Range[parsed.RangeAddress];
-        target.Select();
+        var previousUpdating = _app.ScreenUpdating;
+        try
+        {
+            _app.ScreenUpdating = false;
+            if (!ReferenceEquals(_app.ActiveSheet, sheet))
+            {
+                sheet.Activate();
+            }
+
+            target.Select();
+        }
+        finally
+        {
+            _app.ScreenUpdating = previousUpdating;
+        }
+
+        if (!stealFocus)
+        {
+            TryFocusExcelHwndOwner();
+        }
+    }
+
+    private void TryFocusExcelHwndOwner()
+    {
+        // No-op here; WPF window restores focus after this returns.
     }
 
     public IReadOnlyList<DependentEntry> GetDependentsForSelection(int maxDepth, int maxRows)

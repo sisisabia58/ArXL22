@@ -48,6 +48,18 @@ public partial class DependentsWindow : Window
         }
     }
 
+    public void RestoreKeyboardFocus()
+    {
+        Activate();
+        DependentsGrid.Focus();
+        if (DependentsGrid.SelectedItem != null)
+        {
+            var row = DependentsGrid.ItemContainerGenerator.ContainerFromItem(DependentsGrid.SelectedItem) as System.Windows.Controls.DataGridRow;
+            row?.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            DependentsGrid.Focus();
+        }
+    }
+
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         switch (e.Key)
