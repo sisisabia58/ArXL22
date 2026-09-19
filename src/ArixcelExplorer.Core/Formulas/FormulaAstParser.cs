@@ -21,6 +21,7 @@ public sealed class FormulaAstNode
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public FormulaNodeKind Kind { get; set; }
     public string Label { get; set; } = "";
+    public string Info { get; set; } = "";
     public string? Value { get; set; }
     public string? Location { get; set; }
     public bool IsActiveBranch { get; set; }
@@ -128,6 +129,10 @@ public static class FormulaAstParser
         node.Kind = FormulaNodeKind.Function;
         node.Label = name;
         node.Children = args.Nodes;
+        for (var i = 0; i < node.Children.Count; i++)
+        {
+            node.Children[i].Info = FunctionArgInfo.LabelFor(name, i);
+        }
         end = args.EndIndex + 1;
         return true;
     }

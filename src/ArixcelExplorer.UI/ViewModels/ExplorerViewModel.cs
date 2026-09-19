@@ -17,6 +17,7 @@ public sealed class ExplorerTreeRow : INotifyPropertyChanged
     public string Id { get; set; } = "";
     public int Indent { get; set; }
     public string Component { get; set; } = "";
+    public string Info { get; set; } = "";
     public string Value { get; set; } = "";
     public string Location { get; set; } = "";
     public bool IsActiveBranch { get; set; }
@@ -142,11 +143,24 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
                 var location = string.IsNullOrWhiteSpace(rawLocation)
                     ? ""
                     : TraceUtils.QualifyAddress(rawLocation, RootAddress);
+            var component = node.Label;
+            // Origin row: drop 'Sheet'! prefix from Element when label already equals Location.
+            if (node.Kind == FormulaNodeKind.Root &&
+                string.Equals(node.Label, node.Location, System.StringComparison.OrdinalIgnoreCase))
+            {
+                var parsed = TraceUtils.ParseWorksheetScopedAddress(node.Label);
+                if (parsed != null)
+                {
+                    component = parsed.RangeAddress;
+                }
+            }
+
             Rows.Add(new ExplorerTreeRow
             {
                 Id = node.Id,
                 Indent = depthById.TryGetValue(node.Id, out var depth) ? depth : 0,
-                Component = node.Label,
+                Component = component,
+                Info = node.Info,
                 Value = node.Value ?? "",
                 Location = location,
                 IsActiveBranch = node.IsActiveBranch,

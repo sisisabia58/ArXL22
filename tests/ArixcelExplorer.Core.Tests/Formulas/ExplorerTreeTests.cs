@@ -92,4 +92,16 @@ public sealed class ExplorerTreeTests
     {
         Assert.Equal("#7FDBFF", ArixcelOptions.Default.PrecedentHighlight);
     }
+
+    [Fact]
+    public void FunctionArgInfo_labels_if_and_sumifs_arguments()
+    {
+        Assert.Equal("logical_test", FunctionArgInfo.LabelFor("IF", 0));
+        Assert.Equal("value_if_true", FunctionArgInfo.LabelFor("IF", 1));
+        Assert.Equal("value_if_false", FunctionArgInfo.LabelFor("IF", 2));
+        Assert.Equal("sum_range", FunctionArgInfo.LabelFor("SUMIFS", 0));
+        Assert.Equal("criteria_range1", FunctionArgInfo.LabelFor("SUMIFS", 1));
+        Assert.Equal("criteria1", FunctionArgInfo.LabelFor("SUMIFS", 2));
+        Assert.Equal("", FunctionArgInfo.LabelFor("SUM", 0));
+    }
 }
