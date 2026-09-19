@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ArixcelExplorer.UI</RootNamespace>
+    <AssemblyName>ArixcelExplorer.UI</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ArixcelExplorer.Core\ArixcelExplorer.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="OnLoad">
+  <ribbon>
+    <tabs>
+      <tab id="tabArixcel" label="Arixcel">
+        <group id="grpFormulaExplorer" label="Formula Explorer">
+          <button id="btnExplorePrecedents"
+                  label="Explore Precedents"
+                  screentip="Explore formula logic (Ctrl+Q)"
+                  size="large"
+                  onAction="OnExplorePrecedents" />
+          <button id="btnExploreDependents"
+                  label="Explore Dependents"
+                  screentip="Trace dependents (Ctrl+Shift+Q)"
+                  size="large"
+                  onAction="OnExploreDependents" />
+          <button id="btnExplorerOptions"
+                  label="Options"
+                  screentip="Formula Explorer options"
+                  onAction="OnOptions" />
+        </group>
+        <group id="grpAudit" label="Audit">
+          <button id="btnFormulaMap"
+                  label="Formula Map"
+                  screentip="Color-code formulas, hardcodes, and links"
+                  onAction="OnFormulaMap" />
+          <button id="btnCalculationFlow"
+                  label="Calculation Flow"
+                  screentip="Show inputs, calculations, and outputs"
+                  onAction="OnCalculationFlow" />
+          <button id="btnCompare"
+                  label="Compare"
+                  screentip="Compare worksheets or ranges"
+                  onAction="OnCompare" />
+          <button id="btnClearMap"
+                  label="Clear Map"
+                  screentip="Restore original cell colors"
+                  onAction="OnClearMap" />
+        </group>
+        <group id="grpShortcuts" label="Shortcuts">
+          <button id="btnUnhideSheets"
+                  label="Unhide All Sheets"
+                  onAction="OnUnhideSheets" />
+          <button id="btnSelectRegion"
+                  label="Select Region"
+                  onAction="OnSelectRegion" />
+          <button id="btnToggleFormulas"
+                  label="Toggle Formulas"
+                  onAction="OnToggleFormulas" />
+        </group>
+      </tab>
+    </tabs>
+  </ribbon>
+</customUI>

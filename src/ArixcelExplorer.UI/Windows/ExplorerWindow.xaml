@@ -1,0 +1,83 @@
+<Window x:Class="ArixcelExplorer.UI.Windows.ExplorerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arixcel Explorer"
+        Height="520"
+        Width="460"
+        WindowStartupLocation="CenterScreen"
+        ShowInTaskbar="False"
+        KeyDown="Window_KeyDown">
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" Margin="0,0,0,8">
+      <TextBlock Text="Arixcel Explorer" FontSize="15" FontWeight="SemiBold" DockPanel.Dock="Left" />
+      <TextBlock x:Name="HintText"
+                 Text="↑/↓ navigate · →/← expand · Ctrl+Q expand all · Enter close keep · Esc back"
+                 FontSize="11"
+                 Foreground="#666"
+                 TextWrapping="Wrap"
+                 DockPanel.Dock="Right"
+                 HorizontalAlignment="Right" />
+    </DockPanel>
+
+    <Border Grid.Row="1"
+            Margin="0,0,0,6"
+            Padding="8"
+            BorderBrush="#CFD7DF"
+            BorderThickness="1"
+            Background="#F8FBFF">
+      <StackPanel>
+        <TextBlock Text="FORMULA CONTEXT"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   Foreground="#5B6570"
+                   Margin="0,0,0,4" />
+        <TextBlock x:Name="RootAddressText" FontWeight="SemiBold" Margin="0,0,0,4" />
+        <TextBox x:Name="FormulaBox"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 MaxHeight="70"
+                 FontFamily="Consolas"
+                 FontSize="11"
+                 BorderBrush="#DCE3EA"
+                 Background="White"
+                 VerticalScrollBarVisibility="Auto" />
+      </StackPanel>
+    </Border>
+
+    <Border Grid.Row="2" BorderBrush="#E3E3E3" BorderThickness="1" CornerRadius="4">
+      <DataGrid x:Name="TreeGrid"
+                AutoGenerateColumns="False"
+                HeadersVisibility="Column"
+                GridLinesVisibility="Horizontal"
+                IsReadOnly="True"
+                SelectionMode="Single"
+                SelectionUnit="FullRow"
+                CanUserAddRows="False"
+                CanUserDeleteRows="False"
+                CanUserResizeRows="False"
+                RowHeaderWidth="0"
+                Background="White"
+                SelectionChanged="TreeGrid_SelectionChanged">
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Component" Binding="{Binding Component}" Width="*" />
+          <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="90" />
+          <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="120" />
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <TextBlock x:Name="StatusText"
+               Grid.Row="3"
+               Margin="0,6,0,0"
+               FontSize="11"
+               Foreground="#555" />
+  </Grid>
+</Window>

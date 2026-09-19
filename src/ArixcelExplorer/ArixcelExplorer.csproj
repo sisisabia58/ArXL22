@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ArixcelExplorer</RootNamespace>
+    <AssemblyName>ArixcelExplorer</AssemblyName>
+    <OutputType>Library</OutputType>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ArixcelExplorer.Core\ArixcelExplorer.Core.csproj" />
+    <ProjectReference Include="..\ArixcelExplorer.UI\ArixcelExplorer.UI.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Office.Interop.Excel" Version="15.0.4795.1001" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Ribbon\ArixcelRibbon.xml" />
+    <None Include="Ribbon\ArixcelRibbon.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    Full VSTO packaging requires Visual Studio Office Tools on Windows.
+    Open this solution in VS 2022, add Office/SharePoint development workload,
+    and convert this project to an Excel VSTO Add-in if ClickOnce/VSTO hosting is required.
+  -->
+</Project>

@@ -1,0 +1,36 @@
+<Window x:Class="ArixcelExplorer.UI.Windows.CompareWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arixcel Compare"
+        Height="520"
+        Width="720"
+        WindowStartupLocation="CenterScreen">
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Text="Worksheet / Range Comparison"
+               FontSize="15"
+               FontWeight="SemiBold"
+               Margin="0,0,0,8" />
+
+    <DataGrid x:Name="DiffGrid"
+              Grid.Row="1"
+              AutoGenerateColumns="False"
+              IsReadOnly="True"
+              CanUserAddRows="False">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="Left" Binding="{Binding LeftAddress}" Width="*" />
+        <DataGridTextColumn Header="Left Value" Binding="{Binding LeftValue}" Width="120" />
+        <DataGridTextColumn Header="Right" Binding="{Binding RightAddress}" Width="*" />
+        <DataGridTextColumn Header="Right Value" Binding="{Binding RightValue}" Width="120" />
+        <DataGridTextColumn Header="Kind" Binding="{Binding DiffKind}" Width="120" />
+      </DataGrid.Columns>
+    </DataGrid>
+
+    <TextBlock x:Name="SummaryText" Grid.Row="2" Margin="0,8,0,0" Foreground="#555" />
+  </Grid>
+</Window>
