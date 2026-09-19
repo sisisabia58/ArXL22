@@ -6,6 +6,8 @@
     <UseWPF>true</UseWPF>
     <RootNamespace>ArixcelExplorer.UI</RootNamespace>
     <AssemblyName>ArixcelExplorer.UI</AssemblyName>
+    <SignManifests>false</SignManifests>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\ArixcelExplorer.Core\ArixcelExplorer.Core.csproj" />

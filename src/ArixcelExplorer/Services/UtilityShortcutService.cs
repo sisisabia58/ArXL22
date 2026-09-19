@@ -24,7 +24,10 @@ public sealed class UtilityShortcutService
                 (_app.Selection as Excel.Range)?.CurrentRegion?.Select();
                 break;
             case "toggle-formula-view":
-                _app.DisplayFormulas = !_app.DisplayFormulas;
+                if (_app.ActiveWindow != null)
+                {
+                    _app.ActiveWindow.DisplayFormulas = !_app.ActiveWindow.DisplayFormulas;
+                }
                 break;
             default:
                 throw new InvalidOperationException($"Unknown shortcut: {shortcutId}");

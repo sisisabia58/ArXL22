@@ -23,7 +23,21 @@ if (-not (Test-Path $regAsm)) {
 }
 
 Write-Host "Registering COM classes..." -ForegroundColor Cyan
-& $regAsm /codebase $DllPath /tlb:"$($DllPath -replace '\.dll$','.tlb')" 2>&1 | Out-Null
+$regFile = Join-Path (Split-Path $DllPath) 'ArixcelExplorer.reg'
+$userRegFile = Join-Path (Split-Path $DllPath) 'ArixcelExplorer_User.reg'
+$oldEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+& $regAsm /codebase $DllPath /regfile:$regFile 2>$null | Out-Null
+$ErrorActionPreference = $oldEAP
+if (Test-Path $regFile) {
+    $content = Get-Content $regFile -Raw
+    $userContent = $content -replace 'HKEY_CLASSES_ROOT\\', 'HKEY_CURRENT_USER\Software\Classes\'
+    Set-Content -Path $userRegFile -Value $userContent -Encoding ASCII
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & reg import $userRegFile *>$null
+    $ErrorActionPreference = $oldEAP
+}
 
 # Main VSTO add-in (ribbon + WPF UI)
 $vstoKey = 'HKCU:\Software\Microsoft\Office\Excel\Addins\ArixcelExplorer'

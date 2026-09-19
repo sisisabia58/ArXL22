@@ -5,5 +5,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ArixcelExplorer.Core</RootNamespace>
     <AssemblyName>ArixcelExplorer.Core</AssemblyName>
+    <SignManifests>false</SignManifests>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
   </PropertyGroup>
 </Project>

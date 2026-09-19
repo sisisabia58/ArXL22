@@ -46,15 +46,38 @@ if (-not $msbuild) {
     throw "Visual Studio MSBuild not found. Run .\scripts\Install-ArixcelPrerequisites.ps1 first."
 }
 
+if (-not $env:MSBuildSDKsPath) {
+    $dotnetSdks = Get-ChildItem -Path "${env:ProgramFiles}\dotnet\sdk" -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending
+    if ($dotnetSdks) {
+        $sdkPath = Join-Path $dotnetSdks[0].FullName 'Sdks'
+        if (Test-Path $sdkPath) {
+            $env:MSBuildSDKsPath = $sdkPath
+            $env:DOTNET_ROOT = "${env:ProgramFiles}\dotnet"
+        }
+    }
+}
+
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -like '*Arixcel Explorer Dev*' } | Select-Object -First 1
+$thumbprint = if ($cert) { $cert.Thumbprint } else { '' }
+
 Write-Host "Building ArixcelExplorer ($Configuration)..." -ForegroundColor Cyan
-& $msbuild $project `
-    /restore `
-    /p:Configuration=$Configuration `
-    /p:Platform=AnyCPU `
-    /p:SignManifests=true `
-    /p:ManifestKeyFile=$pfxPath `
-    /p:ManifestCertificatePassword=arixcel-dev `
-    /verbosity:minimal
+$buildArgs = @(
+    $project,
+    '/restore',
+    "/p:Configuration=$Configuration",
+    '/p:Platform=AnyCPU',
+    '/p:SignManifests=true',
+    '/p:MSBuildEnableWorkloadResolver=false',
+    '/verbosity:minimal'
+)
+if ($thumbprint) {
+    $buildArgs += "/p:ManifestCertificateThumbprint=$thumbprint"
+} else {
+    $buildArgs += "/p:ManifestKeyFile=$pfxPath"
+    $buildArgs += '/p:ManifestCertificatePassword=arixcel-dev'
+}
+
+& $msbuild @buildArgs
 
 $outputDir = Join-Path $repoRoot "src\ArixcelExplorer\bin\$Configuration"
 $vsto = Join-Path $outputDir 'ArixcelExplorer.vsto'
