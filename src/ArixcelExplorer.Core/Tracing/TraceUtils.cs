@@ -51,14 +51,44 @@ public static class TraceUtils
 
     public static string FormatTraceValue(object? value)
     {
-        if (value == null) return "";
+        if (value == null || value is DBNull) return "";
         if (value is string s) return s;
-        if (value is double or float or int or long or decimal or bool)
+        if (value is bool b) return b ? "TRUE" : "FALSE";
+        if (value is double or float or decimal or int or long or short or byte)
         {
-            return Convert.ToString(value) ?? "";
+            return Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? "";
         }
 
-        return value.ToString() ?? "";
+        if (value is Array array)
+        {
+            var flat = Flatten(array);
+            if (flat.Count == 0) return "";
+            if (flat.Count < 4) return string.Join(", ", flat);
+            return flat.Count + " values";
+        }
+
+        var raw = value.ToString() ?? "";
+        if (raw.Contains("System.Object")) return "";
+        return raw;
+    }
+
+    private static System.Collections.Generic.List<string> Flatten(Array array)
+    {
+        var items = new System.Collections.Generic.List<string>();
+        foreach (var item in array)
+        {
+            if (item is Array nested)
+            {
+                items.AddRange(Flatten(nested));
+            }
+            else
+            {
+                var formatted = FormatTraceValue(item);
+                if (formatted.Length > 0) items.Add(formatted);
+            }
+        }
+
+        return items;
     }
 
     public static string FormatTraceFormula(object? value)

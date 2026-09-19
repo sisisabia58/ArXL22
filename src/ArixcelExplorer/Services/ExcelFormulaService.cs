@@ -1,5 +1,6 @@
 using System;
 using ArixcelExplorer.Core.Formulas;
+using ArixcelExplorer.Core.Tracing;
 using Excel = Microsoft.Office.Interop.Excel;
 
 namespace ArixcelExplorer.Services;
@@ -38,7 +39,7 @@ public sealed class ExcelFormulaEvaluationContext : IFormulaEvaluationContext
             var sheet = FindWorksheet(parsed.WorksheetName);
             if (sheet == null) return false;
             var range = sheet.Range[parsed.RangeAddress];
-            value = range.Value2?.ToString() ?? "";
+            value = TraceUtils.FormatTraceValue(range.Value2);
             return true;
         }
         catch
@@ -83,7 +84,7 @@ public sealed class ExcelFormulaService
         var ws = cell.Worksheet as Excel.Worksheet;
         var address = $"'{ws?.Name}'!{cell.Address[false, false]}";
         var formula = cell.HasFormula ? cell.Formula?.ToString() ?? "" : "";
-        var value = cell.Value2?.ToString() ?? "";
+        var value = TraceUtils.FormatTraceValue(cell.Value2);
         var tree = FormulaAstParser.Parse(formula, address, value);
         if (ws != null)
         {

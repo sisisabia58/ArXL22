@@ -64,4 +64,26 @@ public sealed class ExplorerTreeTests
         Assert.Equal(0xC16305, ExcelOleColor.FromHex("#0563C1"));
         Assert.Equal(0xFFFFFF, ExcelOleColor.FromHex("nope"));
     }
+
+    [Fact]
+    public void FormatTraceValue_does_not_emit_system_object_array()
+    {
+        object[,] block =
+        {
+            { 10.5, 20d },
+            { 30d, 40d }
+        };
+
+        Assert.Equal("4 values", TraceUtils.FormatTraceValue(block));
+        Assert.Equal("15", TraceUtils.FormatTraceValue(15d));
+        Assert.Equal("", TraceUtils.FormatTraceValue(null));
+        Assert.Equal("hello", TraceUtils.FormatTraceValue("hello"));
+    }
+
+    [Fact]
+    public void FormatTraceValue_formats_one_by_n_array_as_joined_preview()
+    {
+        object[] row = { 1d, 2d, 3d };
+        Assert.Equal("1, 2, 3", TraceUtils.FormatTraceValue(row));
+    }
 }
