@@ -11,7 +11,7 @@ public partial class ThisAddIn
     private void ThisAddIn_Startup(object sender, EventArgs e)
     {
         AddInCoordinator.Initialize(Application);
-        _comApi = new ArixcelComApi();
+        _comApi ??= new ArixcelComApi();
     }
 
     private void ThisAddIn_Shutdown(object sender, EventArgs e)
@@ -21,13 +21,14 @@ public partial class ThisAddIn
         _comApi = null;
     }
 
-    #region VSTO generated code
+    protected override object RequestComAddInAutomationService()
+    {
+        return _comApi ??= new ArixcelComApi();
+    }
 
     private void InternalStartup()
     {
-        Startup += new EventHandler(ThisAddIn_Startup);
-        Shutdown += new EventHandler(ThisAddIn_Shutdown);
+        Startup += ThisAddIn_Startup;
+        Shutdown += ThisAddIn_Shutdown;
     }
-
-    #endregion
 }

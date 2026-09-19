@@ -24,7 +24,13 @@ public sealed class ArixcelComApi : IArixcelComApi, IDTExtensibility2
     public void ReturnToOrigin() => AddInCoordinator.ReturnToOrigin();
     public void CloseAllExplorers() => AddInCoordinator.CloseAllExplorers();
 
-    public void OnConnection(object application, ext_ConnectMode connectMode, object addInInst, ref Array custom) { }
+    public void OnConnection(object application, ext_ConnectMode connectMode, object addInInst, ref Array custom)
+    {
+        if (addInInst is Microsoft.Office.Core.COMAddIn comAddIn)
+        {
+            comAddIn.Object = this;
+        }
+    }
 
     public void OnDisconnection(ext_DisconnectMode removeMode, ref Array custom) { }
 

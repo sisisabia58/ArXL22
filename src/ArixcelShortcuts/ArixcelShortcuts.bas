@@ -2,6 +2,7 @@ Attribute VB_Name = "ArixcelShortcuts"
 ' Arixcel Explorer VBA companion — registers global keyboard shortcuts.
 ' Install this .xlam alongside the ArixcelExplorer VSTO COM add-in.
 
+Private Const VSTO_ADDIN_PROG_ID As String = "ArixcelExplorer"
 Private Const COM_ADDIN_PROG_ID As String = "ArixcelExplorer.ComApi"
 
 Public Sub Auto_Open()
@@ -31,14 +32,37 @@ End Sub
 
 Private Sub InvokeComAddIn(ByVal methodName As String)
     On Error GoTo Failed
-    Dim addIn As COMAddIn
-    Set addIn = Application.COMAddIns(COM_ADDIN_PROG_ID)
-    If addIn Is Nothing Then
+    Dim api As Object
+    Set api = ResolveApi()
+    If api Is Nothing Then
         MsgBox "Arixcel Explorer COM add-in is not loaded.", vbExclamation, "Arixcel"
         Exit Sub
     End If
-    Call Application.Run(addIn.ProgId & "!" & methodName)
+
+    Select Case methodName
+        Case "OpenExplorer": api.OpenExplorer
+        Case "OpenDependents": api.OpenDependents
+        Case "ReturnToOrigin": api.ReturnToOrigin
+        Case Else
+            Err.Raise vbObjectError + 1, "ArixcelShortcuts", "Unknown method " & methodName
+    End Select
     Exit Sub
 Failed:
     MsgBox "Could not call Arixcel Explorer (" & methodName & "): " & Err.Description, vbCritical, "Arixcel"
 End Sub
+
+Private Function ResolveApi() As Object
+    On Error Resume Next
+    Dim addIn As COMAddIn
+    Set addIn = Application.COMAddIns(VSTO_ADDIN_PROG_ID)
+    If Not addIn Is Nothing Then
+        If addIn.Connect = False Then addIn.Connect = True
+        Set ResolveApi = addIn.Object
+        If Not ResolveApi Is Nothing Then Exit Function
+    End If
+    Set addIn = Application.COMAddIns(COM_ADDIN_PROG_ID)
+    If Not addIn Is Nothing Then
+        If addIn.Connect = False Then addIn.Connect = True
+        Set ResolveApi = addIn.Object
+    End If
+End Function
