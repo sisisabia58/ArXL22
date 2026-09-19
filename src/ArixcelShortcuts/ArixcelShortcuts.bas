@@ -7,14 +7,14 @@ Private Const COM_ADDIN_PROG_ID As String = "ArixcelExplorer.ComApi"
 Public Sub Auto_Open()
     Application.OnKey "^q", "Arixcel_OpenExplorer"
     Application.OnKey "^+q", "Arixcel_OpenDependents"
-    Application.OnKey "^+{BS}", "Arixcel_ReturnToOrigin"
+    Application.OnKey "^{BS}", "Arixcel_ReturnToOrigin"
 End Sub
 
 Public Sub Auto_Close()
     On Error Resume Next
     Application.OnKey "^q"
     Application.OnKey "^+q"
-    Application.OnKey "^+{BS}"
+    Application.OnKey "^{BS}"
 End Sub
 
 Public Sub Arixcel_OpenExplorer()
@@ -26,7 +26,7 @@ Public Sub Arixcel_OpenDependents()
 End Sub
 
 Public Sub Arixcel_ReturnToOrigin()
-    ' Reserved for explorer stack navigation — wired from VSTO coordinator.
+    InvokeComAddIn "ReturnToOrigin"
 End Sub
 
 Private Sub InvokeComAddIn(ByVal methodName As String)

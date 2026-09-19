@@ -273,4 +273,20 @@ public static class FormulaAstParser
             CollapseAll(child);
         }
     }
+
+    /// <summary>
+    /// Cycles ExpandAll → CollapseAll. Returns whether the tree is fully expanded after the call.
+    /// CollapseAll keeps the origin/root node expanded so its direct children stay visible.
+    /// </summary>
+    public static bool CycleExpandAll(FormulaAstNode root, bool currentlyExpanded)
+    {
+        if (currentlyExpanded)
+        {
+            CollapseAll(root);
+            return false;
+        }
+
+        ExpandAll(root);
+        return true;
+    }
 }

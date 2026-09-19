@@ -15,6 +15,8 @@ public partial class OptionsWindow : Window
         DependentsWarningBox.Text = options.MaxDependentsBeforeWarning.ToString();
         ConfirmLargeScanBox.IsChecked = options.ConfirmLargeDependentScan;
         CloseBehaviorCombo.SelectedIndex = options.CloseBehavior == ExplorerCloseBehavior.EnterKeepsSelection ? 0 : 1;
+        OriginHighlightBox.Text = options.OriginHighlight;
+        PrecedentHighlightBox.Text = options.PrecedentHighlight;
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
@@ -33,8 +35,25 @@ public partial class OptionsWindow : Window
         Options.CloseBehavior = CloseBehaviorCombo.SelectedIndex == 0
             ? ExplorerCloseBehavior.EnterKeepsSelection
             : ExplorerCloseBehavior.EscNavigatesBack;
+
+        if (ExcelOleColor.IsValidHex(OriginHighlightBox.Text))
+        {
+            Options.OriginHighlight = NormalizeHex(OriginHighlightBox.Text);
+        }
+
+        if (ExcelOleColor.IsValidHex(PrecedentHighlightBox.Text))
+        {
+            Options.PrecedentHighlight = NormalizeHex(PrecedentHighlightBox.Text);
+        }
+
         DialogResult = true;
     }
 
     private void Cancel_Click(object sender, RoutedEventArgs e) => DialogResult = false;
+
+    private static string NormalizeHex(string hex)
+    {
+        var text = hex.Trim();
+        return text.StartsWith("#") ? text.ToUpperInvariant() : "#" + text.ToUpperInvariant();
+    }
 }

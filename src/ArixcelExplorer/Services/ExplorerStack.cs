@@ -12,13 +12,23 @@ public sealed class ExplorerStackEntry
 
 public sealed class ExplorerStack
 {
-    private readonly Stack<ExplorerStackEntry> _stack = new();
+    private readonly List<ExplorerStackEntry> _items = new();
 
-    public void Push(ExplorerStackEntry entry) => _stack.Push(entry);
+    public int Count => _items.Count;
 
-    public ExplorerStackEntry? Pop() => _stack.Count > 0 ? _stack.Pop() : null;
+    public ExplorerStackEntry? First => _items.Count > 0 ? _items[0] : null;
 
-    public ExplorerStackEntry? Peek() => _stack.Count > 0 ? _stack.Peek() : null;
+    public void Push(ExplorerStackEntry entry) => _items.Add(entry);
 
-    public void Clear() => _stack.Clear();
+    public ExplorerStackEntry? Pop()
+    {
+        if (_items.Count == 0) return null;
+        var last = _items[_items.Count - 1];
+        _items.RemoveAt(_items.Count - 1);
+        return last;
+    }
+
+    public ExplorerStackEntry? Peek() => _items.Count > 0 ? _items[_items.Count - 1] : null;
+
+    public void Clear() => _items.Clear();
 }

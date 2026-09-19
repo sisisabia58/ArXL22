@@ -1,8 +1,8 @@
 using System;
 using System.Linq;
-using System.Threading.Tasks;
 using System.Windows;
-using ArixcelExplorer.Core.Formulas;
+using System.Windows.Forms.Integration;
+using System.Windows.Interop;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
 using ArixcelExplorer.UI.ViewModels;
@@ -19,8 +19,10 @@ public static class AddInCoordinator
     private static ExcelAuditService? _auditService;
     private static ExcelCompareService? _compareService;
     private static UtilityShortcutService? _utilityService;
-    private static readonly ExplorerStack ExplorerStack = new();
+    private static HighlightService? _highlightService;
+    private static readonly ExplorerSession Session = new();
     private static ArixcelOptions _options = ArixcelOptions.Default;
+    private static bool _sessionWired;
 
     public static void Initialize(Excel.Application application)
     {
@@ -30,6 +32,9 @@ public static class AddInCoordinator
         _auditService = new ExcelAuditService(application);
         _compareService = new ExcelCompareService(application);
         _utilityService = new UtilityShortcutService(application);
+        _highlightService = new HighlightService(application);
+        EnsureWpfApp();
+        EnsureSessionWired();
     }
 
     public static ArixcelOptions Options => _options;
@@ -37,18 +42,8 @@ public static class AddInCoordinator
     public static void OpenExplorer()
     {
         EnsureInitialized();
-        var cell = _app!.ActiveCell;
-        var ws = cell.Worksheet as Excel.Worksheet;
-        var address = $"'{ws?.Name}'!{cell.Address[false, false]}";
-        ExplorerStack.Push(new ExplorerStackEntry
-        {
-            OriginAddress = address,
-            WorksheetName = ws?.Name ?? "",
-            RowIndex = cell.Row - 1,
-            ColumnIndex = cell.Column - 1
-        });
-
-        ShowExplorerForActiveCell();
+        var origin = CaptureActiveOrigin();
+        ShowExplorerForActiveCell(origin);
     }
 
     public static void OpenDependents()
@@ -85,18 +80,19 @@ public static class AddInCoordinator
             if (confirm != MessageBoxResult.Yes) return;
         }
 
-        var vm = new DependentsViewModel
-        {
-            SourceSummary = selected.Count == 1
-                ? selected[0].Address
-                : $"{selected.Count} selected cells"
-        };
-        vm.Load(entries, vm.SourceSummary);
+        var origin = selected.Count > 0
+            ? ToOrigin(selected[0])
+            : CaptureActiveOrigin();
+        var ownerId = Guid.NewGuid().ToString("N");
+        var vm = new DependentsViewModel();
         vm.NavigateRequested += row => _traceService.NavigateToAddress(row.Address);
-        vm.CloseRequested += () => { /* window closes via dialog result */ };
+        vm.Load(entries, selected.Count == 1 ? selected[0].Address : $"{selected.Count} selected cells");
 
-        var window = new DependentsWindow(vm);
-        window.ShowDialog();
+        var window = new DependentsWindow(vm, _options.CloseBehavior);
+        Session.Track(window, origin, ownerId);
+        _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+        _highlightService.ApplyMany(ownerId, entries.Select(entry => entry.Address), _options.DependentHighlight);
+        ShowModeless(window);
     }
 
     public static void OpenFormulaMap()
@@ -137,56 +133,139 @@ public static class AddInCoordinator
 
     public static void ClearFormulaMap() => _auditService?.ClearOverlays();
 
+    public static void CloseAllExplorers()
+    {
+        Session.CloseAll();
+        _highlightService?.RestoreAll();
+    }
+
+    public static void ReturnToOrigin()
+    {
+        EnsureInitialized();
+        if (Session.HasOpenWindows)
+        {
+            Session.ActivateLatest();
+            return;
+        }
+
+        if (Session.FirstOrigin != null)
+        {
+            _traceService!.NavigateToAddress(Session.FirstOrigin.OriginAddress);
+        }
+    }
+
     public static void ExecuteUtilityShortcut(string shortcutId) =>
         _utilityService?.Execute(shortcutId);
 
-    private static void ShowExplorerForActiveCell()
+    private static void ShowExplorerForActiveCell(ExplorerStackEntry origin)
     {
         var cell = _app!.ActiveCell;
-        var ws = cell.Worksheet as Excel.Worksheet;
-        var address = $"'{ws?.Name}'!{cell.Address[false, false]}";
         var formula = cell.HasFormula ? cell.Formula?.ToString() ?? "" : "";
         var tree = _formulaService!.BuildExplorerTree(cell);
+        var ownerId = Guid.NewGuid().ToString("N");
 
         var vm = new ExplorerViewModel
         {
-            RootAddress = address,
-            FormulaText = formula,
+            RootAddress = origin.OriginAddress,
             StatusText = "Explorer ready"
         };
-        vm.LoadTree(tree, formula);
         vm.NavigateRequested += row =>
         {
-            if (!string.IsNullOrWhiteSpace(row.Location))
-            {
-                _traceService!.NavigateToAddress(row.Location);
-            }
+            if (string.IsNullOrWhiteSpace(row.Location)) return;
+            _traceService!.NavigateToAddress(row.Location);
+            _highlightService!.SetTransient(ownerId, row.Location, _options.PrecedentHighlight, origin.OriginAddress);
         };
-        vm.DrillDownRequested += () =>
-        {
-            OpenExplorer();
-        };
-        vm.CloseRequested += () =>
-        {
-            if (_options.CloseBehavior == ExplorerCloseBehavior.EscNavigatesBack)
-            {
-                var previous = ExplorerStack.Pop();
-                if (previous != null)
-                {
-                    _traceService!.NavigateToAddress(previous.OriginAddress);
-                }
-            }
-        };
+        vm.LoadTree(tree, formula);
 
-        var window = new ExplorerWindow(vm);
-        window.ShowDialog();
+        _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+
+        var window = new ExplorerWindow(vm, _options.CloseBehavior);
+        Session.Track(window, origin, ownerId);
+        ShowModeless(window);
+    }
+
+    private static void EnsureSessionWired()
+    {
+        if (_sessionWired) return;
+        Session.WindowClosed += (sessionWindow, mode, previous) =>
+        {
+            _highlightService?.ReleaseOwner(sessionWindow.HighlightOwnerId);
+            if (mode == ExplorerCloseMode.RestorePrevious && previous != null)
+            {
+                _traceService?.NavigateToAddress(previous.OriginAddress);
+            }
+        };
+        _sessionWired = true;
+    }
+
+    private static ExplorerStackEntry CaptureActiveOrigin()
+    {
+        var cell = _app!.ActiveCell;
+        var ws = cell.Worksheet as Excel.Worksheet;
+        return new ExplorerStackEntry
+        {
+            OriginAddress = $"'{ws?.Name}'!{cell.Address[false, false]}",
+            WorksheetName = ws?.Name ?? "",
+            RowIndex = cell.Row - 1,
+            ColumnIndex = cell.Column - 1
+        };
+    }
+
+    private static ExplorerStackEntry ToOrigin(TraceCellInfo cell) => new()
+    {
+        OriginAddress = cell.Address,
+        WorksheetName = cell.WorksheetName,
+        RowIndex = cell.RowIndex,
+        ColumnIndex = cell.ColumnIndex
+    };
+
+    private static void ShowModeless(Window window)
+    {
+        EnsureWpfApp();
+        window.ShowInTaskbar = true;
+        window.Topmost = false;
+        try
+        {
+            _ = new WindowInteropHelper(window)
+            {
+                Owner = new IntPtr(_app!.Hwnd)
+            };
+        }
+        catch
+        {
+            // owner is optional; window still works without it
+        }
+
+        try
+        {
+            ElementHost.EnableModelessKeyboardInterop(window);
+        }
+        catch
+        {
+            // keyboard interop is best-effort on hosts without WinForms
+        }
+
+        window.Show();
+    }
+
+    private static void EnsureWpfApp()
+    {
+        if (Application.Current == null)
+        {
+            new Application
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown
+            };
+        }
     }
 
     private static void EnsureInitialized()
     {
-        if (_app == null || _traceService == null)
+        if (_app == null || _traceService == null || _highlightService == null)
         {
             throw new InvalidOperationException("Arixcel Explorer is not initialized.");
         }
+
+        EnsureSessionWired();
     }
 }

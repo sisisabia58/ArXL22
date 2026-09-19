@@ -100,6 +100,16 @@ public static class TraceUtils
         return new ParsedTraceAddress { WorksheetName = worksheetName, RangeAddress = rangeAddress };
     }
 
+    public static string QualifyAddress(string address, string contextAddress)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return "";
+        var trimmed = address.Trim();
+        if (ParseWorksheetScopedAddress(trimmed) != null) return trimmed;
+        var context = ParseWorksheetScopedAddress(contextAddress);
+        if (context == null) return trimmed;
+        return $"'{context.WorksheetName}'!{trimmed}";
+    }
+
     public static (int Row, int Col)? ParseCellAddress(string address)
     {
         var match = Regex.Match(address.Trim(), @"^\$?([A-Za-z]{1,3})\$?([1-9][0-9]{0,6})$");

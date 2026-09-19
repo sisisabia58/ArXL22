@@ -21,6 +21,8 @@ public sealed class ArixcelComApi : IArixcelComApi, IDTExtensibility2
     public void OpenCalculationFlow() => AddInCoordinator.OpenCalculationFlow();
     public void OpenCompare() => AddInCoordinator.OpenCompare();
     public void OpenOptions() => AddInCoordinator.OpenOptions();
+    public void ReturnToOrigin() => AddInCoordinator.ReturnToOrigin();
+    public void CloseAllExplorers() => AddInCoordinator.CloseAllExplorers();
 
     public void OnConnection(object application, ext_ConnectMode connectMode, object addInInst, ref Array custom) { }
 

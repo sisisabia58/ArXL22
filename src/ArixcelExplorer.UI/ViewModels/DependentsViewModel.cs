@@ -11,22 +11,68 @@ public sealed class DependentRow : INotifyPropertyChanged
     public string Address { get; set; } = "";
     public int Count { get; set; }
     public string Value { get; set; } = "";
-    public bool IsSelected { get; set; }
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            OnPropertyChanged();
+        }
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? name = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 }
 
 public sealed class DependentsViewModel : INotifyPropertyChanged
 {
     public ObservableCollection<DependentRow> Rows { get; } = new();
-    public string SourceSummary { get; set; } = "";
-    public string StatusText { get; set; } = "";
+
+    private string _sourceSummary = "";
+    public string SourceSummary
+    {
+        get => _sourceSummary;
+        set
+        {
+            if (_sourceSummary == value) return;
+            _sourceSummary = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _statusText = "";
+    public string StatusText
+    {
+        get => _statusText;
+        set
+        {
+            if (_statusText == value) return;
+            _statusText = value;
+            OnPropertyChanged();
+        }
+    }
 
     private int _selectedIndex = -1;
 
+    public int SelectedIndex
+    {
+        get => _selectedIndex;
+        set
+        {
+            if (value < 0) return;
+            SelectRow(value);
+        }
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event System.Action<DependentRow>? NavigateRequested;
-    public event System.Action? CloseRequested;
+    public event System.Action<ExplorerCloseMode>? CloseRequested;
 
     public void Load(IReadOnlyList<DependentEntry> entries, string sourceSummary)
     {
@@ -42,7 +88,7 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
             });
         }
 
-        StatusText = $"{Rows.Count} dependent(s)";
+        StatusText = $"{Rows.Count} dependent(s) · Enter keep · Esc back";
         if (Rows.Count > 0) SelectRow(0);
     }
 
@@ -50,7 +96,16 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     {
         if (index < 0 || index >= Rows.Count) return;
         for (var i = 0; i < Rows.Count; i++) Rows[i].IsSelected = i == index;
-        _selectedIndex = index;
+        if (_selectedIndex != index)
+        {
+            _selectedIndex = index;
+            OnPropertyChanged(nameof(SelectedIndex));
+        }
+        else
+        {
+            _selectedIndex = index;
+        }
+
         NavigateRequested?.Invoke(Rows[index]);
     }
 
@@ -61,7 +116,9 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
         SelectRow(next);
     }
 
-    public void RequestClose() => CloseRequested?.Invoke();
+    public void RequestKeepClose() => CloseRequested?.Invoke(ExplorerCloseMode.KeepSelection);
+
+    public void RequestBackClose() => CloseRequested?.Invoke(ExplorerCloseMode.RestorePrevious);
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

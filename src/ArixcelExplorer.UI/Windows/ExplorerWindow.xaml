@@ -3,57 +3,42 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Arixcel Explorer"
         Height="520"
-        Width="460"
+        Width="480"
+        MinHeight="360"
+        MinWidth="380"
         WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="False"
-        KeyDown="Window_KeyDown">
-  <Grid Margin="12">
+        ShowInTaskbar="True"
+        Topmost="False"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Closing="Window_Closing"
+        Loaded="Window_Loaded">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/ArixcelExplorer.UI;component/Themes/ArixcelTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid Margin="10">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <DockPanel Grid.Row="0" Margin="0,0,0,8">
-      <TextBlock Text="Arixcel Explorer" FontSize="15" FontWeight="SemiBold" DockPanel.Dock="Left" />
-      <TextBlock x:Name="HintText"
-                 Text="↑/↓ navigate · →/← expand · Ctrl+Q expand all · Enter close keep · Esc back"
-                 FontSize="11"
-                 Foreground="#666"
-                 TextWrapping="Wrap"
-                 DockPanel.Dock="Right"
-                 HorizontalAlignment="Right" />
-    </DockPanel>
+    <TextBlock x:Name="HintText"
+               Grid.Row="0"
+               Text="↑/↓ navigate · → expand · ← collapse · Ctrl+Q cycle · Enter keep · Esc back"
+               FontSize="11"
+               Foreground="#666"
+               TextWrapping="Wrap"
+               Margin="0,0,0,8" />
 
-    <Border Grid.Row="1"
-            Margin="0,0,0,6"
-            Padding="8"
-            BorderBrush="#CFD7DF"
-            BorderThickness="1"
-            Background="#F8FBFF">
-      <StackPanel>
-        <TextBlock Text="FORMULA CONTEXT"
-                   FontSize="9"
-                   FontWeight="Bold"
-                   Foreground="#5B6570"
-                   Margin="0,0,0,4" />
-        <TextBlock x:Name="RootAddressText" FontWeight="SemiBold" Margin="0,0,0,4" />
-        <TextBox x:Name="FormulaBox"
-                 IsReadOnly="True"
-                 TextWrapping="Wrap"
-                 MaxHeight="70"
-                 FontFamily="Consolas"
-                 FontSize="11"
-                 BorderBrush="#DCE3EA"
-                 Background="White"
-                 VerticalScrollBarVisibility="Auto" />
-      </StackPanel>
-    </Border>
-
-    <Border Grid.Row="2" BorderBrush="#E3E3E3" BorderThickness="1" CornerRadius="4">
+    <Border Grid.Row="1" BorderBrush="{StaticResource ArixcelBorderBrush}" BorderThickness="1" CornerRadius="2">
       <DataGrid x:Name="TreeGrid"
+                ItemsSource="{Binding Rows}"
+                SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
                 AutoGenerateColumns="False"
                 HeadersVisibility="Column"
                 GridLinesVisibility="Horizontal"
@@ -63,21 +48,89 @@
                 CanUserAddRows="False"
                 CanUserDeleteRows="False"
                 CanUserResizeRows="False"
+                CanUserReorderColumns="False"
                 RowHeaderWidth="0"
                 Background="White"
-                SelectionChanged="TreeGrid_SelectionChanged">
+                BorderThickness="0">
+        <DataGrid.Resources>
+          <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E6F0FA" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1A1A1A" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E6F0FA" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1A1A1A" />
+        </DataGrid.Resources>
+        <DataGrid.RowStyle>
+          <Style TargetType="DataGridRow" BasedOn="{StaticResource ArixcelExplorerRowStyle}" />
+        </DataGrid.RowStyle>
+        <DataGrid.CellStyle>
+          <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Style.Triggers>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#E6F0FA" />
+                <Setter Property="Foreground" Value="#1A1A1A" />
+              </Trigger>
+            </Style.Triggers>
+          </Style>
+        </DataGrid.CellStyle>
         <DataGrid.Columns>
-          <DataGridTextColumn Header="Component" Binding="{Binding Component}" Width="*" />
+          <DataGridTemplateColumn Header="Component" Width="*">
+            <DataGridTemplateColumn.CellTemplate>
+              <DataTemplate>
+                <TextBlock FontFamily="Consolas"
+                           FontSize="12"
+                           Text="{Binding ComponentDisplay}"
+                           VerticalAlignment="Center">
+                  <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                      <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsActiveBranch}" Value="True">
+                          <Setter Property="FontWeight" Value="Bold" />
+                        </DataTrigger>
+                      </Style.Triggers>
+                    </Style>
+                  </TextBlock.Style>
+                </TextBlock>
+              </DataTemplate>
+            </DataGridTemplateColumn.CellTemplate>
+          </DataGridTemplateColumn>
           <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="90" />
-          <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="120" />
+          <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="130" />
         </DataGrid.Columns>
       </DataGrid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Margin="0,8,0,0"
+            Padding="8"
+            BorderBrush="{StaticResource ArixcelBorderBrush}"
+            BorderThickness="1"
+            Background="{StaticResource ArixcelPanelBrush}">
+      <StackPanel>
+        <TextBlock Text="FORMULA"
+                   FontSize="9"
+                   FontWeight="Bold"
+                   Foreground="#5B6570"
+                   Margin="0,0,0,4" />
+        <TextBox x:Name="FormulaBox"
+                 Text="{Binding FormulaText, Mode=OneWay}"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 MinHeight="48"
+                 MaxHeight="90"
+                 FontFamily="Consolas"
+                 FontSize="11"
+                 BorderBrush="#DCE3EA"
+                 Background="White"
+                 VerticalScrollBarVisibility="Auto" />
+      </StackPanel>
     </Border>
 
     <TextBlock x:Name="StatusText"
                Grid.Row="3"
                Margin="0,6,0,0"
                FontSize="11"
-               Foreground="#555" />
+               Foreground="#555"
+               Text="{Binding StatusText}" />
   </Grid>
 </Window>

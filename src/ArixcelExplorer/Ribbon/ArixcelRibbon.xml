@@ -18,6 +18,10 @@
                   label="Options"
                   screentip="Formula Explorer options"
                   onAction="OnOptions" />
+          <button id="btnCloseAll"
+                  label="Close All"
+                  screentip="Close all Explorer windows and restore sheet colors"
+                  onAction="OnCloseAll" />
         </group>
         <group id="grpAudit" label="Audit">
           <button id="btnFormulaMap"

@@ -13,4 +13,6 @@ public interface IArixcelComApi
     void OpenCalculationFlow();
     void OpenCompare();
     void OpenOptions();
+    void ReturnToOrigin();
+    void CloseAllExplorers();
 }

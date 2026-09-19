@@ -1,13 +1,25 @@
 <Window x:Class="ArixcelExplorer.UI.Windows.DependentsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Arixcel Explorer — Dependents"
+        Title="Arixcel Explorer"
         Height="480"
         Width="440"
+        MinHeight="320"
+        MinWidth="360"
         WindowStartupLocation="CenterScreen"
-        ShowInTaskbar="False"
-        KeyDown="Window_KeyDown">
-  <Grid Margin="12">
+        ShowInTaskbar="True"
+        Topmost="False"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        Closing="Window_Closing"
+        Loaded="Window_Loaded">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/ArixcelExplorer.UI;component/Themes/ArixcelTheme.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Grid Margin="10">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
@@ -16,19 +28,22 @@
     </Grid.RowDefinitions>
 
     <TextBlock Grid.Row="0"
-               Text="Arixcel Explorer — Dependents"
-               FontSize="15"
-               FontWeight="SemiBold"
+               Text="↑/↓ navigate · Enter keep · Esc back"
+               FontSize="11"
+               Foreground="#666"
                Margin="0,0,0,8" />
 
     <TextBlock x:Name="SourceSummaryText"
                Grid.Row="1"
                Margin="0,0,0,8"
                TextWrapping="Wrap"
-               Foreground="#444" />
+               Foreground="#444"
+               Text="{Binding SourceSummary}" />
 
-    <Border Grid.Row="2" BorderBrush="#E3E3E3" BorderThickness="1" CornerRadius="4">
+    <Border Grid.Row="2" BorderBrush="{StaticResource ArixcelBorderBrush}" BorderThickness="1" CornerRadius="2">
       <DataGrid x:Name="DependentsGrid"
+                ItemsSource="{Binding Rows}"
+                SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
                 AutoGenerateColumns="False"
                 HeadersVisibility="Column"
                 GridLinesVisibility="Horizontal"
@@ -38,7 +53,29 @@
                 CanUserAddRows="False"
                 CanUserDeleteRows="False"
                 RowHeaderWidth="0"
-                SelectionChanged="DependentsGrid_SelectionChanged">
+                BorderThickness="0"
+                Background="White">
+        <DataGrid.Resources>
+          <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E6F0FA" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1A1A1A" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E6F0FA" />
+          <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1A1A1A" />
+        </DataGrid.Resources>
+        <DataGrid.RowStyle>
+          <Style TargetType="DataGridRow" BasedOn="{StaticResource ArixcelExplorerRowStyle}" />
+        </DataGrid.RowStyle>
+        <DataGrid.CellStyle>
+          <Style TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Style.Triggers>
+              <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#E6F0FA" />
+                <Setter Property="Foreground" Value="#1A1A1A" />
+              </Trigger>
+            </Style.Triggers>
+          </Style>
+        </DataGrid.CellStyle>
         <DataGrid.Columns>
           <DataGridTextColumn Header="Cell" Binding="{Binding Address}" Width="*" />
           <DataGridTextColumn Header="Count" Binding="{Binding Count}" Width="60" />
@@ -51,6 +88,7 @@
                Grid.Row="3"
                Margin="0,6,0,0"
                FontSize="11"
-               Foreground="#555" />
+               Foreground="#555"
+               Text="{Binding StatusText}" />
   </Grid>
 </Window>

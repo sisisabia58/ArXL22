@@ -5,8 +5,26 @@
   <SolidColorBrush x:Key="ArixcelActiveBranchBrush" Color="#FFE49A" />
   <SolidColorBrush x:Key="ArixcelBorderBrush" Color="#CFD7DF" />
   <SolidColorBrush x:Key="ArixcelPanelBrush" Color="#F8FBFF" />
+  <SolidColorBrush x:Key="ArixcelHighlightBrush" Color="#E6F0FA" />
+  <SolidColorBrush x:Key="ArixcelHighlightTextBrush" Color="#1A1A1A" />
+
   <Style TargetType="Window">
     <Setter Property="FontFamily" Value="Segoe UI" />
     <Setter Property="FontSize" Value="12" />
+  </Style>
+
+  <Style x:Key="ArixcelExplorerRowStyle" TargetType="DataGridRow">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="#1A1A1A" />
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding IsActiveBranch}" Value="True">
+        <Setter Property="FontWeight" Value="Bold" />
+      </DataTrigger>
+      <Trigger Property="IsSelected" Value="True">
+        <Setter Property="Background" Value="{StaticResource ArixcelSelectionBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource ArixcelHighlightTextBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource ArixcelAccentBrush}" />
+      </Trigger>
+    </Style.Triggers>
   </Style>
 </ResourceDictionary>

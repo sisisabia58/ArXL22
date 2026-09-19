@@ -70,6 +70,7 @@
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="WindowsBase" />
+    <Reference Include="WindowsFormsIntegration" />
     <Reference Include="Microsoft.Office.Interop.Excel, Version=15.0.0.0, Culture=neutral, PublicKeyToken=71e9bce111e9429c">
       <EmbedInteropTypes>true</EmbedInteropTypes>
     </Reference>
@@ -108,7 +109,9 @@
     <Compile Include="Services\ExcelCompareService.cs" />
     <Compile Include="Services\ExcelFormulaService.cs" />
     <Compile Include="Services\ExcelTraceService.cs" />
+    <Compile Include="Services\ExplorerSession.cs" />
     <Compile Include="Services\ExplorerStack.cs" />
+    <Compile Include="Services\HighlightService.cs" />
     <Compile Include="Services\UtilityShortcutService.cs" />
     <Compile Include="ThisAddIn.cs">
       <SubType>Code</SubType>

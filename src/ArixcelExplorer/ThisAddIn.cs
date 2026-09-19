@@ -16,6 +16,7 @@ public partial class ThisAddIn
 
     private void ThisAddIn_Shutdown(object sender, EventArgs e)
     {
+        AddInCoordinator.CloseAllExplorers();
         AddInCoordinator.ClearFormulaMap();
         _comApi = null;
     }
