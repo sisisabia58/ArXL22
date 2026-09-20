@@ -116,7 +116,7 @@
     <DockPanel Grid.Row="2" Margin="0,8,0,0" LastChildFill="False">
       <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="#555" />
       <Button Content="OK" Width="72" Height="24" DockPanel.Dock="Right"
-              IsDefault="True" Click="Ok_Click" />
+              Click="Ok_Click" />
     </DockPanel>
   </Grid>
 </Window>

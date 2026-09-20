@@ -15,8 +15,8 @@ namespace ArixcelExplorer.ComApi;
 [ProgId("ArixcelExplorer.ComApi")]
 public sealed class ArixcelComApi : IArixcelComApi, IDTExtensibility2
 {
-    public void OpenExplorer() => AddInCoordinator.OpenExplorer();
-    public void OpenDependents() => AddInCoordinator.OpenDependents();
+    public void OpenExplorer() => Invoke(AddInCoordinator.OpenExplorer);
+    public void OpenDependents() => Invoke(AddInCoordinator.OpenDependents);
     public void OpenFormulaMap() => AddInCoordinator.OpenFormulaMap();
     public void OpenCalculationFlow() => AddInCoordinator.OpenCalculationFlow();
     public void OpenCompare() => AddInCoordinator.OpenCompare();
@@ -39,4 +39,16 @@ public sealed class ArixcelComApi : IArixcelComApi, IDTExtensibility2
     public void OnStartupComplete(ref Array custom) { }
 
     public void OnBeginShutdown(ref Array custom) { }
+
+    private static void Invoke(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            throw AddInCoordinator.Unwrap(ex);
+        }
+    }
 }

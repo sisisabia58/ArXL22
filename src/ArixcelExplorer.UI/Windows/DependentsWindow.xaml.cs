@@ -91,4 +91,6 @@ public partial class DependentsWindow : Window
             CloseMode = ExplorerCloseMode.RestorePrevious;
         }
     }
+
+    private void Ok_Click(object sender, RoutedEventArgs e) => _viewModel.RequestKeepClose();
 }

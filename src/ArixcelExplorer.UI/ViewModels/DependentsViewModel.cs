@@ -11,6 +11,10 @@ public sealed class DependentRow : INotifyPropertyChanged
     public string Address { get; set; } = "";
     public int Count { get; set; }
     public string Value { get; set; } = "";
+    public bool IsOrigin { get; set; }
+
+    public string AddressDisplay => DependentsAggregator.ElementAddress(Address);
+    public string CountDisplay => IsOrigin || Count == 0 ? "" : Count.ToString();
 
     private bool _isSelected;
     public bool IsSelected
@@ -74,25 +78,29 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     public event System.Action<DependentRow>? NavigateRequested;
     public event System.Action<ExplorerCloseMode>? CloseRequested;
 
-    public void Load(IReadOnlyList<DependentEntry> entries, string sourceSummary)
+    public void Load(IReadOnlyList<DependentEntry> entries, string originAddress, string originValue = "")
     {
         Rows.Clear();
-        SourceSummary = sourceSummary;
-        foreach (var entry in entries)
+        SourceSummary = originAddress;
+        var combined = DependentsAggregator.PrependOrigin(originAddress, originValue, entries);
+        for (var i = 0; i < combined.Count; i++)
         {
+            var entry = combined[i];
             Rows.Add(new DependentRow
             {
                 Address = entry.Address,
                 Count = entry.Count,
-                Value = entry.Value
+                Value = entry.Value,
+                IsOrigin = i == 0
             });
         }
 
-        StatusText = $"{Rows.Count} dependent(s) · Enter keep · Esc back";
-        if (Rows.Count > 0) SelectRow(0);
+        var dependentCount = System.Math.Max(0, Rows.Count - 1);
+        StatusText = $"{dependentCount} dependent(s)";
+        if (Rows.Count > 0) SelectRow(0, navigate: false);
     }
 
-    public void SelectRow(int index)
+    public void SelectRow(int index, bool navigate = true)
     {
         if (index < 0 || index >= Rows.Count) return;
         for (var i = 0; i < Rows.Count; i++) Rows[i].IsSelected = i == index;
@@ -106,7 +114,10 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
             _selectedIndex = index;
         }
 
-        NavigateRequested?.Invoke(Rows[index]);
+        if (navigate)
+        {
+            NavigateRequested?.Invoke(Rows[index]);
+        }
     }
 
     public void MoveSelection(int delta)

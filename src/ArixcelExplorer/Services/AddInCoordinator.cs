@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Forms.Integration;
-using System.Windows.Interop;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
 using ArixcelExplorer.UI.ViewModels;
@@ -42,13 +41,32 @@ public static class AddInCoordinator
     public static void OpenExplorer()
     {
         EnsureInitialized();
-        var origin = CaptureActiveOrigin();
-        ShowExplorerForActiveCell(origin);
+        try
+        {
+            var origin = CaptureActiveOrigin();
+            ShowExplorerForActiveCell(origin);
+        }
+        catch (Exception ex)
+        {
+            ShowCallError("OpenExplorer", ex);
+        }
     }
 
     public static void OpenDependents()
     {
         EnsureInitialized();
+        try
+        {
+            OpenDependentsCore();
+        }
+        catch (Exception ex)
+        {
+            ShowCallError("OpenDependents", ex);
+        }
+    }
+
+    private static void OpenDependentsCore()
+    {
         var selected = _traceService!.GetSelectedCells();
         if (selected.Count == 0) return;
 
@@ -62,13 +80,12 @@ public static class AddInCoordinator
             if (confirm != MessageBoxResult.Yes) return;
         }
 
-        var task = _traceService.TraceAsync(
+        var trace = _traceService.Trace(
             selected,
             TraceDirection.Dependents,
             1,
             _options.TraceSafetyLimit);
-        task.Wait();
-        var entries = DependentsAggregator.Aggregate(task.Result.Rows, TraceDirection.Dependents);
+        var entries = DependentsAggregator.Aggregate(trace.Rows, TraceDirection.Dependents);
 
         if (_options.ConfirmLargeDependentScan && entries.Count > _options.MaxDependentsBeforeWarning)
         {
@@ -88,21 +105,39 @@ public static class AddInCoordinator
         DependentsWindow? window = null;
         vm.NavigateRequested += row =>
         {
-            if (string.IsNullOrWhiteSpace(row.Address)) return;
-            _traceService.NavigateToAddress(row.Address, stealFocus: false);
+            try
+            {
+                if (string.IsNullOrWhiteSpace(row.Address)) return;
+                _traceService.NavigateToAddress(row.Address, stealFocus: false);
+            }
+            catch
+            {
+                // Navigation must not close or hide the dependents window.
+            }
+
             window?.Dispatcher.BeginInvoke(new Action(() =>
             {
                 window.Activate();
                 window.RestoreKeyboardFocus();
             }), System.Windows.Threading.DispatcherPriority.Input);
         };
-        vm.Load(entries, selected.Count == 1 ? selected[0].Address : $"{selected.Count} selected cells");
+        var originValue = selected.Count == 1
+            ? TraceUtils.FormatTraceValue(selected[0].Value)
+            : "";
+        vm.Load(entries, origin.OriginAddress, originValue);
 
         window = new DependentsWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
-        _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
-        _highlightService.ApplyMany(ownerId, entries.Select(entry => entry.Address), _options.DependentHighlight);
         ShowModeless(window);
+        try
+        {
+            _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+            _highlightService.ApplyMany(ownerId, entries.Select(entry => entry.Address), _options.DependentHighlight);
+        }
+        catch
+        {
+            // Highlights are optional; the window must still stay visible.
+        }
     }
 
     public static void OpenFormulaMap()
@@ -182,9 +217,17 @@ public static class AddInCoordinator
         ExplorerWindow? window = null;
         vm.NavigateRequested += row =>
         {
-            if (string.IsNullOrWhiteSpace(row.Location)) return;
-            _traceService!.NavigateToAddress(row.Location, stealFocus: false);
-            _highlightService!.SetTransient(ownerId, row.Location, _options.PrecedentHighlight, origin.OriginAddress);
+            try
+            {
+                if (string.IsNullOrWhiteSpace(row.Location)) return;
+                _traceService!.NavigateToAddress(row.Location, stealFocus: false);
+                _highlightService!.SetTransient(ownerId, row.Location, _options.PrecedentHighlight, origin.OriginAddress);
+            }
+            catch
+            {
+                // Navigation/highlights must not close or hide Explorer.
+            }
+
             window?.Dispatcher.BeginInvoke(new Action(() =>
             {
                 window.Activate();
@@ -193,11 +236,17 @@ public static class AddInCoordinator
         };
         vm.LoadTree(tree, formula);
 
-        _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
-
         window = new ExplorerWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         ShowModeless(window);
+        try
+        {
+            _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+        }
+        catch
+        {
+            // Highlights are optional; the window must still stay visible.
+        }
     }
 
     private static void EnsureSessionWired()
@@ -239,19 +288,8 @@ public static class AddInCoordinator
     {
         EnsureWpfApp();
         window.ShowInTaskbar = true;
-        window.Topmost = false;
-        try
-        {
-            _ = new WindowInteropHelper(window)
-            {
-                Owner = new IntPtr(_app!.Hwnd)
-            };
-        }
-        catch
-        {
-            // owner is optional; window still works without it
-        }
-
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        window.Topmost = true;
         try
         {
             ElementHost.EnableModelessKeyboardInterop(window);
@@ -262,6 +300,36 @@ public static class AddInCoordinator
         }
 
         window.Show();
+        window.WindowState = WindowState.Normal;
+        window.Activate();
+        window.Focus();
+        window.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!window.IsVisible) return;
+            window.Topmost = false;
+            window.Activate();
+            window.Focus();
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
+    private static void ShowCallError(string operation, Exception ex)
+    {
+        var inner = Unwrap(ex);
+        MessageBox.Show(
+            $"Could not open {operation}: {inner.Message}",
+            "Arixcel Explorer",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+    }
+
+    internal static Exception Unwrap(Exception ex)
+    {
+        if (ex is AggregateException aggregate)
+        {
+            return aggregate.Flatten().InnerException ?? aggregate;
+        }
+
+        return ex.InnerException ?? ex;
     }
 
     private static void EnsureWpfApp()

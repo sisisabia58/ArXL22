@@ -118,7 +118,7 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         _isFullyExpanded = true;
         FormulaText = formulaText;
         RefreshRows();
-        if (Rows.Count > 0) SelectRow(0);
+        if (Rows.Count > 0) ApplySelection(0, navigate: false);
     }
 
     public void RefreshRows()

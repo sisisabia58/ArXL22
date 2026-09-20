@@ -79,13 +79,22 @@ public static class TraceBuilder
                 Level = 0,
                 IsFinal = input.MaxDepth == 0,
                 Truncated = false
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(true);
         }
 
         var currentLevelCells = new List<TraceCellInfo> { input.Root };
         for (var level = 0; level < input.MaxDepth && currentLevelCells.Count > 0 && !truncated; level++)
         {
-            var neighborLists = await input.GetAllNeighbors(currentLevelCells).ConfigureAwait(false);
+            IReadOnlyList<IReadOnlyList<TraceCellInfo>> neighborLists;
+            try
+            {
+                neighborLists = await input.GetAllNeighbors(currentLevelCells).ConfigureAwait(true);
+            }
+            catch
+            {
+                // Excel throws when a cell has no direct precedents/dependents.
+                neighborLists = Array.Empty<IReadOnlyList<TraceCellInfo>>();
+            }
             var nextLevelCells = new List<TraceCellInfo>();
 
             for (var i = 0; i < neighborLists.Count && !truncated; i++)
@@ -119,8 +128,62 @@ public static class TraceBuilder
                     Level = level + 1,
                     IsFinal = willBeFinal,
                     Truncated = truncated
-                }).ConfigureAwait(false);
+                }).ConfigureAwait(true);
             }
+        }
+
+        return new TraceBuilderResult { Rows = rows, Truncated = truncated };
+    }
+
+    public static TraceBuilderResult Build(
+        TraceCellInfo root,
+        int maxDepth,
+        int? maxRows,
+        Func<IReadOnlyList<TraceCellInfo>, IReadOnlyList<IReadOnlyList<TraceCellInfo>>> getAllNeighbors)
+    {
+        var max = maxRows ?? TraceUtils.MaxTraceRows;
+        var rows = new List<TraceRow> { ToTraceRow(root, 0, null) };
+        var visited = new HashSet<string>
+        {
+            TraceUtils.BuildTraceCellKey(root.WorksheetName, root.RowIndex, root.ColumnIndex)
+        };
+        var truncated = false;
+        var currentLevelCells = new List<TraceCellInfo> { root };
+
+        for (var level = 0; level < maxDepth && currentLevelCells.Count > 0 && !truncated; level++)
+        {
+            IReadOnlyList<IReadOnlyList<TraceCellInfo>> neighborLists;
+            try
+            {
+                neighborLists = getAllNeighbors(currentLevelCells);
+            }
+            catch
+            {
+                neighborLists = Array.Empty<IReadOnlyList<TraceCellInfo>>();
+            }
+
+            var nextLevelCells = new List<TraceCellInfo>();
+            for (var i = 0; i < neighborLists.Count && !truncated; i++)
+            {
+                var parent = currentLevelCells[i];
+                var neighbors = neighborLists[i] ?? Array.Empty<TraceCellInfo>();
+                foreach (var neighbor in neighbors)
+                {
+                    var key = TraceUtils.BuildTraceCellKey(neighbor.WorksheetName, neighbor.RowIndex, neighbor.ColumnIndex);
+                    if (!visited.Add(key)) continue;
+
+                    rows.Add(ToTraceRow(neighbor, level + 1, parent.Address));
+                    if (rows.Count >= max)
+                    {
+                        truncated = true;
+                        break;
+                    }
+
+                    nextLevelCells.Add(neighbor);
+                }
+            }
+
+            currentLevelCells = nextLevelCells;
         }
 
         return new TraceBuilderResult { Rows = rows, Truncated = truncated };
@@ -165,5 +228,29 @@ public static class DependentsAggregator
 
         result.Sort((a, b) => string.Compare(a.Address, b.Address, StringComparison.OrdinalIgnoreCase));
         return result;
+    }
+
+    public static IReadOnlyList<DependentEntry> PrependOrigin(
+        string originAddress,
+        string originValue,
+        IReadOnlyList<DependentEntry> dependents)
+    {
+        var rows = new List<DependentEntry>(dependents.Count + 1)
+        {
+            new DependentEntry
+            {
+                Address = originAddress ?? "",
+                Value = originValue ?? "",
+                Count = 0
+            }
+        };
+        rows.AddRange(dependents);
+        return rows;
+    }
+
+    public static string ElementAddress(string address)
+    {
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
+        return parsed != null ? parsed.RangeAddress : address ?? "";
     }
 }

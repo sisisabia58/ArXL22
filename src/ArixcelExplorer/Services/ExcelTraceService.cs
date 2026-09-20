@@ -32,6 +32,35 @@ public sealed class ExcelTraceService
 
     public TraceCellInfo GetActiveCell() => ToTraceCellInfo(_app.ActiveCell);
 
+    public TraceBuilderResult Trace(
+        IEnumerable<TraceCellInfo> roots,
+        TraceDirection direction,
+        int maxDepth,
+        int maxRows)
+    {
+        var rootList = roots.ToList();
+        if (rootList.Count == 0)
+        {
+            return new TraceBuilderResult { Rows = Array.Empty<TraceRow>() };
+        }
+
+        if (rootList.Count == 1)
+        {
+            return TraceBuilder.Build(rootList[0], maxDepth, maxRows, cells => GetNeighbors(cells, direction));
+        }
+
+        var allRows = new List<TraceRow>();
+        var truncated = false;
+        foreach (var root in rootList)
+        {
+            var partial = TraceBuilder.Build(root, 1, maxRows, cells => GetNeighbors(cells, direction));
+            allRows.AddRange(partial.Rows);
+            truncated |= partial.Truncated;
+        }
+
+        return new TraceBuilderResult { Rows = allRows, Truncated = truncated };
+    }
+
     public async Task<TraceBuilderResult> TraceAsync(
         IEnumerable<TraceCellInfo> roots,
         TraceDirection direction,
@@ -52,7 +81,7 @@ public sealed class ExcelTraceService
                 MaxDepth = maxDepth,
                 MaxRows = maxRows,
                 GetAllNeighbors = cells => Task.FromResult(GetNeighbors(cells, direction))
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(true);
         }
 
         var allRows = new List<TraceRow>();
@@ -65,7 +94,7 @@ public sealed class ExcelTraceService
                 MaxDepth = 1,
                 MaxRows = maxRows,
                 GetAllNeighbors = cells => Task.FromResult(GetNeighbors(cells, direction))
-            }).ConfigureAwait(false);
+            }).ConfigureAwait(true);
 
             allRows.AddRange(partial.Rows);
             truncated |= partial.Truncated;
@@ -91,10 +120,11 @@ public sealed class ExcelTraceService
         }
 
         if (sheet == null) return;
-        var target = sheet.Range[parsed.RangeAddress];
+
         var previousUpdating = _app.ScreenUpdating;
         try
         {
+            var target = sheet.Range[parsed.RangeAddress];
             _app.ScreenUpdating = false;
             if (!ReferenceEquals(_app.ActiveSheet, sheet))
             {
@@ -102,6 +132,10 @@ public sealed class ExcelTraceService
             }
 
             target.Select();
+        }
+        catch (Exception)
+        {
+            return;
         }
         finally
         {
@@ -122,9 +156,8 @@ public sealed class ExcelTraceService
     public IReadOnlyList<DependentEntry> GetDependentsForSelection(int maxDepth, int maxRows)
     {
         var roots = GetSelectedCells();
-        var task = TraceAsync(roots, TraceDirection.Dependents, maxDepth, maxRows);
-        task.Wait();
-        return DependentsAggregator.Aggregate(task.Result.Rows, TraceDirection.Dependents);
+        var result = Trace(roots, TraceDirection.Dependents, maxDepth, maxRows);
+        return DependentsAggregator.Aggregate(result.Rows, TraceDirection.Dependents);
     }
 
     private IReadOnlyList<IReadOnlyList<TraceCellInfo>> GetNeighbors(
@@ -149,14 +182,23 @@ public sealed class ExcelTraceService
         var source = sheet.Cells[cell.RowIndex + 1, cell.ColumnIndex + 1] as Excel.Range;
         if (source == null) return neighbors;
 
-        Excel.Range? links = direction == TraceDirection.Precedents
-            ? source.DirectPrecedents as Excel.Range
-            : source.DirectDependents as Excel.Range;
-        if (links == null) return neighbors;
-
-        foreach (Excel.Range linked in links.Cells)
+        try
         {
-            neighbors.Add(ToTraceCellInfo(linked));
+            var links = direction == TraceDirection.Precedents
+                ? source.DirectPrecedents as Excel.Range
+                : source.DirectDependents as Excel.Range;
+            if (links == null) return neighbors;
+
+            foreach (Excel.Range linked in links.Cells)
+            {
+                neighbors.Add(ToTraceCellInfo(linked));
+            }
+        }
+        catch (Exception)
+        {
+            // Excel throws COMException (often 0x800A03EC) when a cell has no
+            // direct precedents/dependents instead of returning null.
+            return neighbors;
         }
 
         return neighbors;
