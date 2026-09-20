@@ -17,8 +17,22 @@
     <OfficeApplication>Excel</OfficeApplication>
     <VSTO_TrustAssembliesLocation>true</VSTO_TrustAssembliesLocation>
     <ApplicationVersion>1.0.0.0</ApplicationVersion>
+    <ApplicationRevision>0</ApplicationRevision>
+    <ProductName>EXLerate Explorer</ProductName>
+    <PublisherName>EXLerate</PublisherName>
+    <FriendlyName>EXLerate Explorer</FriendlyName>
     <PublishUrl>publish\</PublishUrl>
     <InstallUrl />
+    <Install>true</Install>
+    <InstallFrom>Disk</InstallFrom>
+    <UpdateEnabled>false</UpdateEnabled>
+    <UpdateMode>Foreground</UpdateMode>
+    <UpdateInterval>7</UpdateInterval>
+    <UpdateIntervalUnits>Days</UpdateIntervalUnits>
+    <UpdatePeriodically>false</UpdatePeriodically>
+    <UpdateRequired>false</UpdateRequired>
+    <MapFileExtensions>true</MapFileExtensions>
+    <CreateWebPageOnPublish>false</CreateWebPageOnPublish>
     <TargetCulture>en</TargetCulture>
     <IsWebBootstrapper>False</IsWebBootstrapper>
     <BootstrapperEnabled>True</BootstrapperEnabled>

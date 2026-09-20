@@ -1,0 +1,15 @@
+EXLerate Explorer - office laptop install (no administrator)
+============================================================
+
+1. Close Excel completely (File -> Exit, check the taskbar).
+2. Double-click Install.cmd.
+3. Open Excel. The EXLerate tab should appear on the ribbon.
+
+If Windows blocks the script: right-click Install.cmd -> Run anyway,
+or open PowerShell in this folder and run:
+  powershell -ExecutionPolicy Bypass -File .\Install-EXLeratePerUser.ps1
+
+Uninstall: double-click Uninstall.cmd, or Settings -> Apps -> EXLerate Explorer.
+
+Needs Excel Desktop 64-bit and the Visual Studio Tools for Office Runtime
+(already present if Arixcel was installed on this PC).

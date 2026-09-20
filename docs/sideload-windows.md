@@ -11,7 +11,7 @@ Full install for the EXLerate Explorer VSTO COM add-in and VBA shortcut companio
 | .NET Framework 4.8 SDK | Included with VS workload above |
 | VSTO Runtime | [Download](https://aka.ms/vstor) or `winget install Microsoft.VSTOR` |
 
-## Option A — Automated (recommended)
+## Option A — Developer PC (sideload from source)
 
 Open **PowerShell as Administrator** in the repo root:
 
@@ -39,6 +39,34 @@ Restart Excel. Enable add-ins under **File → Options → Add-ins** if any are 
 ```
 
 5. Restart Excel and enable add-ins (see below).
+
+## Option C — Office laptop (no admin)
+
+Build the installer on a developer PC, then copy it to the laptop. No Visual Studio and no administrator rights on the laptop.
+
+**Developer PC**
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\Publish-EXLerateInstaller.ps1
+```
+
+That writes:
+
+- `dist\EXLerate-Installer\Install.cmd` — always produced
+- `dist\EXLerateSetup.msi` — if the WiX CLI is available
+- `dist\clickonce\setup.exe` — VSTO ClickOnce (ribbon only; use the MSI or Install.cmd for Ctrl+Q as well)
+
+**Office laptop**
+
+1. Close Excel completely (all workbooks).
+2. Copy `EXLerateSetup.msi` **or** the `EXLerate-Installer` folder.
+3. Double-click the MSI, or run `Install.cmd`.
+4. Reopen Excel. The **EXLerate** tab should appear.
+
+Prerequisites already on most office PCs that ran Arixcel: Excel Desktop 64-bit and the [VSTO Runtime](https://aka.ms/vstor). If the runtime is missing, install it once (that step may need admin / IT).
+
+Uninstall with `Uninstall.cmd` or **Settings -> Apps -> EXLerate Explorer**.
 
 ## Enable add-ins in Excel
 

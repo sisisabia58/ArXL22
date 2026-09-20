@@ -9,3 +9,4 @@ packages/
 *.pfx
 dist/
 publish/
+installer/*.g.wxs

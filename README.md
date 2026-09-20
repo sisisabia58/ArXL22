@@ -49,7 +49,30 @@ msbuild Arixcel.sln /p:Configuration=Release /p:Platform="Any CPU"
 
 > **Note:** The `ArixcelExplorer` project ships as a class library scaffold compatible with conversion to a full VSTO Excel Add-in in Visual Studio. Open the solution on Windows, use **Add > New Item > VSTO Add-in** migration or create a new Excel VSTO project and reference these projects.
 
-## Install / sideload (Windows)
+## Install on an office laptop (no admin)
+
+On a **developer PC** with Visual Studio, publish a per-user installer:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\Publish-EXLerateInstaller.ps1
+```
+
+Copy **one** of these to the office laptop (USB / OneDrive / email):
+
+| Artifact | What the user runs |
+|---|---|
+| `dist\EXLerateSetup.msi` | Double-click (per-user MSI, no admin) |
+| `dist\EXLerate-Installer\` | Double-click `Install.cmd` |
+| `dist\clickonce\setup.exe` | VSTO ClickOnce (needs [VSTO Runtime](https://aka.ms/vstor) already installed) |
+
+Then: **close Excel** -> run the installer -> **reopen Excel**. The **EXLerate** tab should appear.
+
+Uninstall: `Uninstall.cmd` in the same folder, or Apps & features -> EXLerate Explorer.
+
+The MSI/folder installer copies files to `%LOCALAPPDATA%\EXLerate` and registers HKCU COM add-ins. It does not write to Program Files.
+
+## Sideload from source (developer PC)
 
 The `ArixcelExplorer` project is a full Excel VSTO add-in. One-command sideload:
 

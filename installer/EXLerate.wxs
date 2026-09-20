@@ -1,0 +1,44 @@
+﻿<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <?ifndef ProductVersion ?>
+  <?define ProductVersion = "1.0.0.0" ?>
+  <?endif?>
+  <Package Name="EXLerate Explorer"
+           Manufacturer="EXLerate"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="A8F3C2E1-7B94-4D6A-9E21-8C4F0B1A2D3E"
+           Scope="perUser"
+           InstallerVersion="500">
+    <SummaryInformation Description="Per-user EXLerate Explorer Excel add-in" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of EXLerate Explorer is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="EXLerate" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="EXLerate Explorer" Level="1">
+      <ComponentGroupRef Id="PayloadComponents" />
+    </Feature>
+
+    <CustomAction Id="CA_Register"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="cmd.exe /c RegisterFromMsi.cmd"
+                  Execute="immediate"
+                  Return="check"
+                  Impersonate="yes" />
+
+    <CustomAction Id="CA_Unregister"
+                  Directory="INSTALLFOLDER"
+                  ExeCommand="cmd.exe /c UnregisterFromMsi.cmd"
+                  Execute="immediate"
+                  Return="ignore"
+                  Impersonate="yes" />
+
+    <InstallExecuteSequence>
+      <Custom Action="CA_Register" After="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="CA_Unregister" After="InstallInitialize" Condition="REMOVE=&quot;ALL&quot;" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
+
+
