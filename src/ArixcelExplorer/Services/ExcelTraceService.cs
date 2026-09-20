@@ -122,25 +122,20 @@ public sealed class ExcelTraceService
 
         if (sheet == null) return;
 
-        var previousUpdating = _app.ScreenUpdating;
         try
         {
             var target = sheet.Range[parsed.RangeAddress];
-            _app.ScreenUpdating = false;
             if (!ReferenceEquals(_app.ActiveSheet, sheet))
             {
                 sheet.Activate();
             }
 
             target.Select();
+            ScrollRangeIntoView(target);
         }
         catch (Exception)
         {
             return;
-        }
-        finally
-        {
-            _app.ScreenUpdating = previousUpdating;
         }
 
         if (!stealFocus && reclaimHwnd != IntPtr.Zero)
@@ -150,6 +145,51 @@ public sealed class ExcelTraceService
             SetForegroundWindow(reclaimHwnd);
             SetFocus(reclaimHwnd);
         }
+    }
+
+    private void ScrollRangeIntoView(Excel.Range target)
+    {
+        var anchor = target.Cells[1, 1] as Excel.Range ?? target;
+        try
+        {
+            if (IsOnScreen(anchor)) return;
+        }
+        catch
+        {
+            // VisibleRange can throw while Excel is activating a sheet.
+        }
+
+        try
+        {
+            anchor.Show();
+            if (IsOnScreen(anchor)) return;
+        }
+        catch
+        {
+            // Range.Show is missing or a no-op on some Excel builds.
+        }
+
+        try
+        {
+            _app.Goto(anchor, true);
+        }
+        catch
+        {
+            // Navigation must not throw back into Explorer.
+        }
+    }
+
+    private bool IsOnScreen(Excel.Range anchor)
+    {
+        var visible = _app.ActiveWindow?.VisibleRange;
+        if (visible == null) return false;
+
+        var lastRow = visible.Row + visible.Rows.Count - 1;
+        var lastCol = visible.Column + visible.Columns.Count - 1;
+        return anchor.Row >= visible.Row &&
+               anchor.Row <= lastRow &&
+               anchor.Column >= visible.Column &&
+               anchor.Column <= lastCol;
     }
 
     [DllImport("user32.dll")]

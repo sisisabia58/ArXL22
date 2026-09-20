@@ -655,21 +655,24 @@ public static class AddInCoordinator
 
     public static void DispatchExplorerKey(string keyName)
     {
-        var canonical = ExplorerKeyboard.CanonicalKeyName(keyName);
-        if (canonical == null) return;
-
-        var key = canonical switch
+        RunOnUi(() =>
         {
-            "Up" => System.Windows.Input.Key.Up,
-            "Down" => System.Windows.Input.Key.Down,
-            "Left" => System.Windows.Input.Key.Left,
-            "Right" => System.Windows.Input.Key.Right,
-            "Enter" => System.Windows.Input.Key.Enter,
-            "Escape" => System.Windows.Input.Key.Escape,
-            _ => System.Windows.Input.Key.None
-        };
-        if (key == System.Windows.Input.Key.None) return;
-        Session.DispatchKey(key);
+            var canonical = ExplorerKeyboard.CanonicalKeyName(keyName);
+            if (canonical == null) return;
+
+            var key = canonical switch
+            {
+                "Up" => System.Windows.Input.Key.Up,
+                "Down" => System.Windows.Input.Key.Down,
+                "Left" => System.Windows.Input.Key.Left,
+                "Right" => System.Windows.Input.Key.Right,
+                "Enter" => System.Windows.Input.Key.Enter,
+                "Escape" => System.Windows.Input.Key.Escape,
+                _ => System.Windows.Input.Key.None
+            };
+            if (key == System.Windows.Input.Key.None) return;
+            Session.DispatchKey(key);
+        });
     }
 
     private static void RefreshArrowHook()

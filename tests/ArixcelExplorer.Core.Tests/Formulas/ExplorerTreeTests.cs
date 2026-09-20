@@ -79,6 +79,15 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
+    public void VisibleAnchor_is_the_top_left_cell_of_a_range()
+    {
+        Assert.Equal("C196", TraceUtils.VisibleAnchor("C196:CL196"));
+        Assert.Equal("C196", TraceUtils.VisibleAnchor("'S'!$C$196:$CL$196"));
+        Assert.Equal("D17", TraceUtils.VisibleAnchor("$D$17"));
+        Assert.Equal("", TraceUtils.VisibleAnchor(""));
+    }
+
+    [Fact]
     public void ExcelOleColor_converts_hex_to_bgr()
     {
         Assert.True(ExcelOleColor.IsValidHex("#F4C2C2"));

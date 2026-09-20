@@ -181,6 +181,17 @@ public static class TraceUtils
         return $"'{parsed.WorksheetName}'!{shortRange}";
     }
 
+    public static string VisibleAnchor(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return "";
+        var trimmed = address.Trim();
+        var parsed = ParseWorksheetScopedAddress(trimmed);
+        var range = parsed?.RangeAddress ?? trimmed;
+        if (!IsRangeAddress(range)) return "";
+        var first = range.Split(':')[0];
+        return StripAbsolute(first);
+    }
+
     public static bool IsRangeAddress(string address)
     {
         if (string.IsNullOrWhiteSpace(address)) return false;
