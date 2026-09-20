@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds the ArixcelExplorer VSTO Excel add-in and produces a .vsto manifest.
+  Builds the EXLerate Explorer VSTO Excel add-in and produces a .vsto manifest.
 #>
 param(
     [ValidateSet('Debug', 'Release')]

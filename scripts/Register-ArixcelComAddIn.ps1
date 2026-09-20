@@ -23,8 +23,8 @@ if (-not (Test-Path $regAsm)) {
 }
 
 Write-Host "Registering COM classes..." -ForegroundColor Cyan
-$regFile = Join-Path (Split-Path $DllPath) 'ArixcelExplorer.reg'
-$userRegFile = Join-Path (Split-Path $DllPath) 'ArixcelExplorer_User.reg'
+$regFile = Join-Path (Split-Path $DllPath) 'EXLerateExplorer.reg'
+$userRegFile = Join-Path (Split-Path $DllPath) 'EXLerateExplorer_User.reg'
 $oldEAP = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
 & $regAsm /codebase $DllPath /regfile:$regFile 2>$null | Out-Null
@@ -39,19 +39,28 @@ if (Test-Path $regFile) {
     $ErrorActionPreference = $oldEAP
 }
 
+foreach ($legacyKey in @(
+    'HKCU:\Software\Microsoft\Office\Excel\Addins\ArixcelExplorer',
+    'HKCU:\Software\Microsoft\Office\Excel\Addins\ArixcelExplorer.ComApi'
+)) {
+    if (Test-Path $legacyKey) {
+        Remove-Item -Path $legacyKey -Recurse -Force
+    }
+}
+
 # Main VSTO add-in (ribbon + WPF UI)
-$vstoKey = 'HKCU:\Software\Microsoft\Office\Excel\Addins\ArixcelExplorer'
+$vstoKey = 'HKCU:\Software\Microsoft\Office\Excel\Addins\EXLerateExplorer'
 New-Item -Path $vstoKey -Force | Out-Null
-Set-ItemProperty -Path $vstoKey -Name 'Description' -Value 'Arixcel Explorer formula auditing add-in'
-Set-ItemProperty -Path $vstoKey -Name 'FriendlyName' -Value 'Arixcel Explorer'
+Set-ItemProperty -Path $vstoKey -Name 'Description' -Value 'EXLerate Explorer formula auditing add-in'
+Set-ItemProperty -Path $vstoKey -Name 'FriendlyName' -Value 'EXLerate Explorer'
 Set-ItemProperty -Path $vstoKey -Name 'LoadBehavior' -Value 3 -Type DWord
 Set-ItemProperty -Path $vstoKey -Name 'Manifest' -Value "$vstoUri|vstolocal"
 
 # VBA shortcut bridge (Ctrl+Q / Ctrl+Shift+Q)
-$apiKey = 'HKCU:\Software\Microsoft\Office\Excel\Addins\ArixcelExplorer.ComApi'
+$apiKey = 'HKCU:\Software\Microsoft\Office\Excel\Addins\EXLerateExplorer.ComApi'
 New-Item -Path $apiKey -Force | Out-Null
-Set-ItemProperty -Path $apiKey -Name 'Description' -Value 'Arixcel Explorer VBA API bridge'
-Set-ItemProperty -Path $apiKey -Name 'FriendlyName' -Value 'Arixcel Explorer API'
+Set-ItemProperty -Path $apiKey -Name 'Description' -Value 'EXLerate Explorer VBA API bridge'
+Set-ItemProperty -Path $apiKey -Name 'FriendlyName' -Value 'EXLerate Explorer API'
 Set-ItemProperty -Path $apiKey -Name 'LoadBehavior' -Value 3 -Type DWord
 Set-ItemProperty -Path $apiKey -Name 'CommandLineSafe' -Value 0 -Type DWord
 Set-ItemProperty -Path $apiKey -Name 'Connect' -Value $comApiClsid
@@ -61,5 +70,5 @@ Write-Host "  VSTO add-in:  $vstoKey"
 Write-Host "  VBA ComApi:   $apiKey"
 Write-Host ""
 Write-Host "Restart Excel, then verify under File -> Options -> Add-ins:" -ForegroundColor Yellow
-Write-Host "  COM Add-ins: Arixcel Explorer + Arixcel Explorer API (both checked)"
-Write-Host "  Excel Add-ins: ArixcelShortcuts (after running New-ArixcelShortcutsXlam.ps1)"
+Write-Host "  COM Add-ins: EXLerate Explorer + EXLerate Explorer API (both checked)"
+Write-Host "  Excel Add-ins: EXLerateShortcuts (after running New-ArixcelShortcutsXlam.ps1)"

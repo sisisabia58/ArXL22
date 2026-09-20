@@ -1,8 +1,8 @@
-# Arixcel Explorer (Replica)
+# EXLerate Explorer
 
-Windows desktop Excel add-in that replicates the core features of [Arixcel Explorer](https://www.arixcel.com/): formula logic exploration, dependents tracing, formula map, calculation flow, compare, and utility shortcuts.
+Windows desktop Excel add-in for formula logic exploration, dependents tracing, formula map, calculation flow, compare, and utility shortcuts. Inspired by [Arixcel Explorer](https://www.arixcel.com/) and porting domain logic from the open-source [XLerate](https://github.com/omegarhovega/XLerate) project (MIT).
 
-Built as a **C# VSTO-style COM add-in** with a **VBA shortcut companion**, porting domain logic from the open-source [XLerate](https://github.com/omegarhovega/XLerate) project (MIT).
+Built as a **C# VSTO-style COM add-in** with a **VBA shortcut companion**.
 
 ## Features
 
@@ -66,18 +66,18 @@ Or in Visual Studio 2022:
 1. Open `Arixcel.sln`
 2. Set **ArixcelExplorer** as startup project → **Build** (F6)
 3. Run `.\scripts\Register-ArixcelComAddIn.ps1` with paths to `bin\Release\ArixcelExplorer.vsto` and `.dll`
-4. Run `.\scripts\New-ArixcelShortcutsXlam.ps1` (imports `src/ArixcelShortcuts/ArixcelShortcuts.bas`)
-5. Restart Excel → **File → Options → Add-ins** → enable both COM add-ins and **ArixcelShortcuts**
-6. Confirm the **Arixcel** ribbon tab appears
+4. Run `.\scripts\New-ArixcelShortcutsXlam.ps1` (imports `src/ArixcelShortcuts/EXLerateShortcuts.bas`)
+5. Restart Excel → **File → Options → Add-ins** → enable both COM add-ins and **EXLerateShortcuts**
+6. Confirm the **EXLerate** ribbon tab appears
 
 ### VBA companion
 
 The VBA module registers:
 
-- `Ctrl+Q` → `OpenExplorer`
-- `Ctrl+Shift+Q` → `OpenDependents`
+- `Ctrl+Q` → `EXLerate_OpenExplorer`
+- `Ctrl+Shift+Q` → `EXLerate_OpenDependents`
 
-It calls the COM add-in via `Application.COMAddIns("ArixcelExplorer.ComApi")`.
+It calls the COM add-in via `Application.COMAddIns("EXLerateExplorer")`.
 
 ## Development on Core only (Linux/macOS)
 
@@ -93,4 +93,4 @@ Application code: project license TBD.
 
 Ported XLerate logic: MIT (see [XLerate LICENSE](https://github.com/omegarhovega/XLerate/blob/master/LICENSE)).
 
-Arixcel product name and UI are used as design reference only; this is an independent implementation.
+Arixcel product name and UI are used as design reference only; this is an independent EXLerate implementation.

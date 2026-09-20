@@ -1,6 +1,6 @@
 # Windows sideload guide
 
-Full install for the Arixcel Explorer VSTO COM add-in and VBA shortcut companion.
+Full install for the EXLerate Explorer VSTO COM add-in and VBA shortcut companion.
 
 ## Prerequisites
 
@@ -46,11 +46,11 @@ Restart Excel. Enable add-ins under **File → Options → Add-ins** if any are 
 
 | Manage dropdown | Add-in | Action |
 |---|---|---|
-| COM Add-ins → Go | Arixcel Explorer | Check |
-| COM Add-ins → Go | Arixcel Explorer API | Check |
-| Excel Add-ins → Go | ArixcelShortcuts | Browse → select `dist\ArixcelShortcuts.xlam` |
+| COM Add-ins → Go | EXLerate Explorer | Check |
+| COM Add-ins → Go | EXLerate Explorer API | Check |
+| Excel Add-ins → Go | EXLerateShortcuts | Browse → select `dist\EXLerateShortcuts.xlam` |
 
-Confirm the **Arixcel** ribbon tab appears. Test **Ctrl+Q** and **Ctrl+Shift+Q**.
+Confirm the **EXLerate** ribbon tab appears. Test **Ctrl+Q** and **Ctrl+Shift+Q**.
 
 ## Troubleshooting
 

@@ -23,11 +23,11 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 
 Write-Host @"
 
-  Arixcel Explorer - Windows sideload
-  ===================================
-  1. Build VSTO COM add-in (ArixcelExplorer)
+  EXLerate Explorer - Windows sideload
+  ====================================
+  1. Build VSTO COM add-in (EXLerate Explorer)
   2. Register for Excel COM Add-ins
-  3. Create ArixcelShortcuts.xlam from VBA source
+  3. Create EXLerateShortcuts.xlam from VBA source
   4. Enable both in Excel (File -> Options -> Add-ins)
 
 "@ -ForegroundColor Cyan
@@ -69,12 +69,12 @@ Write-Host @"
   Verify:
     File -> Options -> Add-ins
       Manage COM Add-ins -> Go:
-        [x] Arixcel Explorer
-        [x] Arixcel Explorer API
+        [x] EXLerate Explorer
+        [x] EXLerate Explorer API
       Manage Excel Add-ins -> Go:
-        [x] ArixcelShortcuts
+        [x] EXLerateShortcuts
 
-  Confirm the "Arixcel" ribbon tab appears.
+  Confirm the "EXLerate" ribbon tab appears.
   Test Ctrl+Q (Explore Precedents) and Ctrl+Shift+Q (Explore Dependents).
 
   Artifacts:

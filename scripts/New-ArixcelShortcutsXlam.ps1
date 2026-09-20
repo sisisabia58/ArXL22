@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-  Builds the ArixcelShortcuts.xlam companion add-in from the VBA source module.
+  Builds the EXLerateShortcuts.xlam companion add-in from the VBA source module.
 #>
 param(
-    [string]$OutputPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist\ArixcelShortcuts.xlam')
+    [string]$OutputPath = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist\EXLerateShortcuts.xlam')
 )
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
-$basPath = Join-Path $repoRoot 'src\ArixcelShortcuts\ArixcelShortcuts.bas'
+$basPath = Join-Path $repoRoot 'src\ArixcelShortcuts\EXLerateShortcuts.bas'
 $outDir = Split-Path $OutputPath -Parent
 
 if (-not (Test-Path $basPath)) { throw "VBA source not found: $basPath" }
@@ -20,6 +20,16 @@ function Register-XlamAddIn {
     $openValue = 'OPEN'
     if (Test-Path $key) {
         $existing = Get-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
+        $current = [string]$existing.$openValue
+        if ($current -like '*ArixcelShortcuts.xlam*') {
+            $parts = $current -split [char]0 | Where-Object { $_ -and $_ -notlike '*ArixcelShortcuts.xlam*' }
+            if ($parts.Count -gt 0) {
+                Set-ItemProperty -Path $key -Name $openValue -Value ($parts -join [char]0)
+            } else {
+                Remove-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
+            }
+            $existing = Get-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
+        }
         $entry = """$XlamPath"""
         if ($existing.$openValue) {
             if ($existing.$openValue -notlike "*$XlamPath*") {
@@ -34,7 +44,7 @@ function Register-XlamAddIn {
 
 if (Test-Path $OutputPath) { Remove-Item $OutputPath -Force }
 
-Write-Host "Creating ArixcelShortcuts.xlam..." -ForegroundColor Cyan
+Write-Host "Creating EXLerateShortcuts.xlam..." -ForegroundColor Cyan
 
 $excel = $null
 $workbook = $null
@@ -48,7 +58,7 @@ try {
 
     # xlModule = 1
     $module = $workbook.VBProject.VBComponents.Add(1)
-    $module.Name = 'ArixcelShortcuts'
+    $module.Name = 'EXLerateShortcuts'
 
     $lines = Get-Content $basPath -Raw
     # Strip the Attribute VB_Name line - VBComponents.Name sets it

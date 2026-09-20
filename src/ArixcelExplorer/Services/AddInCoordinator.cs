@@ -74,7 +74,7 @@ public static class AddInCoordinator
         {
             var confirm = MessageBox.Show(
                 $"Scan dependents for {selected.Count} selected cells? Large scans may be slow.",
-                "Arixcel Explorer",
+                "EXLerate Explorer",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes) return;
@@ -91,7 +91,7 @@ public static class AddInCoordinator
         {
             var confirm = MessageBox.Show(
                 $"Found {entries.Count} dependents. Continue?",
-                "Arixcel Explorer",
+                "EXLerate Explorer",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning);
             if (confirm != MessageBoxResult.Yes) return;
@@ -317,7 +317,7 @@ public static class AddInCoordinator
         var inner = Unwrap(ex);
         MessageBox.Show(
             $"Could not open {operation}: {inner.Message}",
-            "Arixcel Explorer",
+            "EXLerate Explorer",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
     }
@@ -347,7 +347,7 @@ public static class AddInCoordinator
     {
         if (_app == null || _traceService == null || _highlightService == null)
         {
-            throw new InvalidOperationException("Arixcel Explorer is not initialized.");
+            throw new InvalidOperationException("EXLerate Explorer is not initialized.");
         }
 
         EnsureSessionWired();

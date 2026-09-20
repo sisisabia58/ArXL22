@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-  Installs prerequisites for building and sideloading the Arixcel Explorer VSTO add-in.
+  Installs prerequisites for building and sideloading the EXLerate Explorer VSTO add-in.
 #>
 param(
     [switch]$SkipVsBuildTools
@@ -34,7 +34,7 @@ function Get-VsMsBuildPath {
     return $null
 }
 
-Write-Host "=== Arixcel Explorer - prerequisite check ===" -ForegroundColor Cyan
+Write-Host "=== EXLerate Explorer - prerequisite check ===" -ForegroundColor Cyan
 
 if (-not (Test-VstoRuntime)) {
     Write-Host "Installing VSTO Runtime..." -ForegroundColor Yellow

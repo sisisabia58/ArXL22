@@ -12,7 +12,7 @@ namespace ArixcelExplorer.ComApi;
 [ComVisible(true)]
 [Guid("B2C3D4E5-F6A7-8901-BCDE-F12345678901")]
 [ClassInterface(ClassInterfaceType.None)]
-[ProgId("ArixcelExplorer.ComApi")]
+[ProgId("EXLerateExplorer.ComApi")]
 public sealed class ArixcelComApi : IArixcelComApi, IDTExtensibility2
 {
     public void OpenExplorer() => Invoke(AddInCoordinator.OpenExplorer);

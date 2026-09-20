@@ -1,15 +1,15 @@
-# Arixcel Replica — Project Context
+# EXLerate Explorer — Project Context
 
 ## Goal
 
-Replicate [Arixcel Explorer](https://www.arixcel.com/) for **Excel Desktop on Windows**: formula logic exploration, multi-cell dependents tracing, formula map, calculation flow, compare, and utility shortcuts.
+Ship **EXLerate Explorer** for **Excel Desktop on Windows**: formula logic exploration, multi-cell dependents tracing, formula map, calculation flow, compare, and utility shortcuts. Design reference: [Arixcel Explorer](https://www.arixcel.com/).
 
 ## Architecture
 
 - **ArixcelExplorer** — VSTO-style COM add-in (C# / .NET Framework 4.8) with custom ribbon
 - **ArixcelExplorer.Core** — pure domain logic (ported from [XLerate](https://github.com/omegarhovega/XLerate) TypeScript core)
-- **ArixcelExplorer.UI** — WPF windows matching Arixcel Explorer layout
-- **ArixcelShortcuts** — VBA `.xlam` companion for `Ctrl+Q` / `Ctrl+Shift+Q`
+- **ArixcelExplorer.UI** — WPF windows for EXLerate Explorer layout
+- **ArixcelShortcuts** — VBA `.xlam` companion (`EXLerateShortcuts`) for `Ctrl+Q` / `Ctrl+Shift+Q`
 
 ## Feature parity matrix
 
