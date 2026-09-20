@@ -34,16 +34,47 @@
               ItemsSource="{Binding Rows}"
               SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
               SelectionMode="Extended"
-              SelectionChanged="TreeGrid_SelectionChanged">
+              KeyboardNavigation.DirectionalNavigation="None"
+              PreviewKeyDown="Window_PreviewKeyDown"
+              SelectionChanged="TreeGrid_SelectionChanged"
+              MouseDoubleClick="TreeGrid_MouseDoubleClick">
       <ListView.View>
         <GridView AllowsColumnReorder="False">
           <GridViewColumn Header="Element" Width="{x:Static settings:ExplorerChrome.ElementWidth}">
             <GridViewColumn.CellTemplate>
               <DataTemplate>
-                <TextBlock Text="{Binding ComponentDisplay}"
-                           FontFamily="Segoe UI"
-                           FontSize="11"
-                           VerticalAlignment="Center" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <Border Width="{Binding IndentWidth}" />
+                  <Border Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                          Height="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                          Margin="0,0,4,0"
+                          BorderBrush="#808080"
+                          BorderThickness="1"
+                          Background="#F8F8F8"
+                          Cursor="Hand"
+                          PreviewMouseLeftButtonDown="TreeGlyph_PreviewMouseLeftButtonDown">
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Hidden" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                            <Setter Property="Visibility" Value="Visible" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <TextBlock Text="{Binding Glyph}"
+                               FontFamily="Segoe UI"
+                               FontSize="10"
+                               FontWeight="Bold"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center" />
+                  </Border>
+                  <TextBlock Text="{Binding Component}"
+                             FontFamily="Segoe UI"
+                             FontSize="11"
+                             VerticalAlignment="Center" />
+                </StackPanel>
               </DataTemplate>
             </GridViewColumn.CellTemplate>
           </GridViewColumn>
@@ -64,17 +95,18 @@
             BorderThickness="1"
             Background="White"
             Height="{x:Static settings:ExplorerChrome.FormulaPaneHeight}">
-      <TextBox x:Name="FormulaBox"
-               Text="{Binding FormulaText, Mode=OneWay}"
-               IsReadOnly="True"
-               TextWrapping="Wrap"
-               FontFamily="Segoe UI"
-               FontSize="11"
-               BorderThickness="0"
-               Background="Transparent"
-               VerticalContentAlignment="Center"
-               Padding="0"
-               PreviewMouseLeftButtonDown="FormulaBox_PreviewMouseLeftButtonDown" />
+      <RichTextBox x:Name="FormulaBox"
+                   IsReadOnly="True"
+                   IsDocumentEnabled="True"
+                   AcceptsReturn="False"
+                   FontFamily="Segoe UI"
+                   FontSize="11"
+                   BorderThickness="0"
+                   Background="Transparent"
+                   Padding="0"
+                   VerticalScrollBarVisibility="Disabled"
+                   HorizontalScrollBarVisibility="Disabled"
+                   PreviewMouseLeftButtonDown="FormulaBox_PreviewMouseLeftButtonDown" />
     </Border>
 
     <Button Grid.Row="2"

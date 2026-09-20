@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using ArixcelExplorer.Core.Tracing;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -103,7 +104,7 @@ public sealed class ExcelTraceService
         return new TraceBuilderResult { Rows = allRows, Truncated = truncated };
     }
 
-    public void NavigateToAddress(string address, bool stealFocus = true)
+    public void NavigateToAddress(string address, bool stealFocus = true, IntPtr reclaimHwnd = default)
     {
         if (string.IsNullOrWhiteSpace(address)) return;
         var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
@@ -142,16 +143,26 @@ public sealed class ExcelTraceService
             _app.ScreenUpdating = previousUpdating;
         }
 
-        if (!stealFocus)
+        if (!stealFocus && reclaimHwnd != IntPtr.Zero)
         {
-            TryFocusExcelHwndOwner();
+            ShowWindow(reclaimHwnd, 9);
+            BringWindowToTop(reclaimHwnd);
+            SetForegroundWindow(reclaimHwnd);
+            SetFocus(reclaimHwnd);
         }
     }
 
-    private void TryFocusExcelHwndOwner()
-    {
-        // No-op here; WPF window restores focus after this returns.
-    }
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool BringWindowToTop(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     public IReadOnlyList<DependentEntry> GetDependentsForSelection(int maxDepth, int maxRows)
     {

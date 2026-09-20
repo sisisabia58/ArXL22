@@ -2,10 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows;
 using System.Windows.Forms.Integration;
+using System.Windows.Threading;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
+using ArixcelExplorer.Ribbon;
 using ArixcelExplorer.UI.ViewModels;
 using ArixcelExplorer.UI.Windows;
 using Excel = Microsoft.Office.Interop.Excel;
@@ -24,6 +27,12 @@ public static class AddInCoordinator
     private static readonly ExplorerSession Session = new();
     private static ArixcelOptions _options = new();
     private static bool _sessionWired;
+    private static ExcelArrowHook? _arrowHook;
+    private static Dispatcher? _uiDispatcher;
+    private static readonly object UiLock = new();
+    private static Excel.AppEvents_Event? _appEvents;
+
+    public static bool IsInitialized => _app != null && _traceService != null && _highlightService != null;
 
     public static void Initialize(Excel.Application application)
     {
@@ -37,17 +46,22 @@ public static class AddInCoordinator
         _options = OptionsStore.Load();
         EnsureWpfApp();
         EnsureSessionWired();
+        WireApplicationEvents();
+        AddInLog.Info("AddInCoordinator.Initialize complete");
     }
 
     public static ArixcelOptions Options => _options;
 
     public static void OpenExplorer()
     {
-        EnsureInitialized();
         try
         {
-            var origin = CaptureActiveOrigin();
-            ShowExplorerForActiveCell(origin);
+            RunOnUi(() =>
+            {
+                EnsureInitialized();
+                var origin = CaptureActiveOrigin();
+                ShowExplorerForActiveCell(origin);
+            });
         }
         catch (Exception ex)
         {
@@ -57,10 +71,13 @@ public static class AddInCoordinator
 
     public static void OpenDependents()
     {
-        EnsureInitialized();
         try
         {
-            OpenDependentsCore();
+            RunOnUi(() =>
+            {
+                EnsureInitialized();
+                OpenDependentsCore();
+            });
         }
         catch (Exception ex)
         {
@@ -111,7 +128,8 @@ public static class AddInCoordinator
             try
             {
                 if (string.IsNullOrWhiteSpace(row.Address)) return;
-                _traceService.NavigateToAddress(row.Address, stealFocus: false);
+                var hwnd = window?.WindowHandle ?? IntPtr.Zero;
+                _traceService.NavigateToAddress(row.Address, stealFocus: false, reclaimHwnd: hwnd);
             }
             catch
             {
@@ -172,6 +190,7 @@ public static class AddInCoordinator
         window = new DependentsWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         ShowModeless(window, _options.DependentsWindow, ExplorerChrome.DependentsWidth, ExplorerChrome.DependentsHeight);
+        RefreshArrowHook();
         window.Closed += (_, _) => PersistWindowBounds(window, dependents: true);
         try
         {
@@ -213,14 +232,17 @@ public static class AddInCoordinator
 
     public static void OpenOptions()
     {
-        var window = new OptionsWindow(_options);
-        if (window.ShowDialog() == true)
+        RunOnUi(() =>
         {
-            window.Options.ExplorerWindow = _options.ExplorerWindow;
-            window.Options.DependentsWindow = _options.DependentsWindow;
-            _options = window.Options;
-            PersistOptions();
-        }
+            var window = new OptionsWindow(_options);
+            if (window.ShowDialog() == true)
+            {
+                window.Options.ExplorerWindow = _options.ExplorerWindow;
+                window.Options.DependentsWindow = _options.DependentsWindow;
+                _options = window.Options;
+                PersistOptions();
+            }
+        });
     }
 
     public static void ClearFormulaMap() => _auditService?.ClearOverlays();
@@ -228,6 +250,7 @@ public static class AddInCoordinator
     public static void CloseAllExplorers()
     {
         Session.CloseAll();
+        RefreshArrowHook();
         _highlightService?.RestoreAll();
         PersistOptions();
     }
@@ -267,7 +290,8 @@ public static class AddInCoordinator
             try
             {
                 if (string.IsNullOrWhiteSpace(row.Location)) return;
-                _traceService!.NavigateToAddress(row.Location, stealFocus: false);
+                var hwnd = window?.WindowHandle ?? IntPtr.Zero;
+                _traceService!.NavigateToAddress(row.Location, stealFocus: false, reclaimHwnd: hwnd);
                 _highlightService!.SetTransientMany(
                     ownerId,
                     vm.SelectedLocations(),
@@ -317,6 +341,7 @@ public static class AddInCoordinator
         window = new ExplorerWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         ShowModeless(window, _options.ExplorerWindow, ExplorerChrome.ExplorerWidth, ExplorerChrome.ExplorerHeight);
+        RefreshArrowHook();
         window.Closed += (_, _) => PersistWindowBounds(window, dependents: false);
         try
         {
@@ -338,6 +363,8 @@ public static class AddInCoordinator
             {
                 _traceService?.NavigateToAddress(previous.OriginAddress);
             }
+
+            RefreshArrowHook();
         };
         _sessionWired = true;
     }
@@ -365,9 +392,28 @@ public static class AddInCoordinator
 
     private static void ShowModeless(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
     {
+        RunOnUi(() => ShowModelessCore(window, placement, defaultWidth, defaultHeight));
+    }
+
+    private static void ShowModelessCore(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
+    {
         EnsureWpfApp();
         window.ShowInTaskbar = true;
         ApplyPlacement(window, placement, defaultWidth, defaultHeight);
+        try
+        {
+            if (_app != null)
+            {
+                new System.Windows.Interop.WindowInteropHelper(window)
+                {
+                    Owner = new IntPtr(_app.Hwnd)
+                };
+            }
+        }
+        catch
+        {
+            // owner is optional
+        }
         try
         {
             ElementHost.EnableModelessKeyboardInterop(window);
@@ -538,23 +584,188 @@ public static class AddInCoordinator
 
     private static void EnsureWpfApp()
     {
-        if (Application.Current == null)
+        if (Application.Current != null)
         {
-            new Application
-            {
-                ShutdownMode = ShutdownMode.OnExplicitShutdown
-            };
+            _uiDispatcher ??= Application.Current.Dispatcher;
+            return;
         }
+
+        lock (UiLock)
+        {
+            if (Application.Current != null)
+            {
+                _uiDispatcher ??= Application.Current.Dispatcher;
+                return;
+            }
+
+            if (Thread.CurrentThread.GetApartmentState() == ApartmentState.STA)
+            {
+                new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                _uiDispatcher = Application.Current?.Dispatcher;
+                return;
+            }
+
+            Exception? startError = null;
+            var ready = new ManualResetEventSlim(false);
+            var thread = new Thread(() =>
+            {
+                try
+                {
+                    new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+                    _uiDispatcher = Dispatcher.CurrentDispatcher;
+                }
+                catch (Exception ex)
+                {
+                    startError = ex;
+                }
+                finally
+                {
+                    ready.Set();
+                }
+
+                if (startError == null)
+                {
+                    Dispatcher.Run();
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "EXLerateUI"
+            };
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            ready.Wait();
+            if (startError != null) throw startError;
+        }
+    }
+
+    private static void RunOnUi(Action action)
+    {
+        EnsureWpfApp();
+        var dispatcher = _uiDispatcher ?? Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        dispatcher.Invoke(action);
+    }
+
+    public static void DispatchExplorerKey(string keyName)
+    {
+        var canonical = ExplorerKeyboard.CanonicalKeyName(keyName);
+        if (canonical == null) return;
+
+        var key = canonical switch
+        {
+            "Up" => System.Windows.Input.Key.Up,
+            "Down" => System.Windows.Input.Key.Down,
+            "Left" => System.Windows.Input.Key.Left,
+            "Right" => System.Windows.Input.Key.Right,
+            "Enter" => System.Windows.Input.Key.Enter,
+            "Escape" => System.Windows.Input.Key.Escape,
+            _ => System.Windows.Input.Key.None
+        };
+        if (key == System.Windows.Input.Key.None) return;
+        Session.DispatchKey(key);
+    }
+
+    private static void RefreshArrowHook()
+    {
+        if (Session.HasOpenWindows)
+        {
+            _arrowHook ??= new ExcelArrowHook(Session, _app!);
+            _arrowHook.Install();
+            return;
+        }
+
+        _arrowHook?.Dispose();
+        _arrowHook = null;
     }
 
     private static void EnsureInitialized()
     {
-        if (_app == null || _traceService == null || _highlightService == null)
+        if (!IsInitialized)
+        {
+            TryRecoverApplication();
+        }
+
+        if (!IsInitialized)
         {
             throw new InvalidOperationException("EXLerate Explorer is not initialized.");
         }
 
         EnsureSessionWired();
+    }
+
+    private static void TryRecoverApplication()
+    {
+        AddInLog.Info("EnsureInitialized recovering Excel application");
+        try
+        {
+            var app = Globals.ThisAddIn?.Application;
+            if (app != null)
+            {
+                Initialize(app);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
+
+        try
+        {
+            var app = (Excel.Application)Marshal.GetActiveObject("Excel.Application");
+            Initialize(app);
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
+    }
+
+    private static void WireApplicationEvents()
+    {
+        if (_app == null || ReferenceEquals(_appEvents, _app)) return;
+
+        try
+        {
+            if (_appEvents != null)
+            {
+                _appEvents.NewWorkbook -= OnNewWorkbook;
+                _appEvents.WorkbookOpen -= OnWorkbookOpen;
+                _appEvents.WorkbookActivate -= OnWorkbookActivate;
+            }
+        }
+        catch
+        {
+            // previous Excel instance may already be gone
+        }
+
+        _appEvents = (Excel.AppEvents_Event)_app;
+        _appEvents.NewWorkbook += OnNewWorkbook;
+        _appEvents.WorkbookOpen += OnWorkbookOpen;
+        _appEvents.WorkbookActivate += OnWorkbookActivate;
+    }
+
+    private static void OnNewWorkbook(Excel.Workbook workbook)
+    {
+        AddInLog.Info($"NewWorkbook {workbook?.Name}");
+        ArixcelRibbon.Invalidate();
+    }
+
+    private static void OnWorkbookOpen(Excel.Workbook workbook)
+    {
+        AddInLog.Info($"WorkbookOpen {workbook?.Name}");
+        ArixcelRibbon.Invalidate();
+    }
+
+    private static void OnWorkbookActivate(Excel.Workbook workbook)
+    {
+        ArixcelRibbon.Invalidate();
     }
 
     [DllImport("user32.dll")]

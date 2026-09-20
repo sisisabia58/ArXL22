@@ -25,6 +25,9 @@ public sealed class ExplorerTreeRow : INotifyPropertyChanged
     public bool IsActiveBranch { get; set; }
     public bool HasChildren { get; set; }
     public bool IsExpanded { get; set; }
+    public int SourceStart { get; set; }
+    public int SourceLength { get; set; }
+    public FormulaNodeKind Kind { get; set; }
 
     private bool _isSelected;
     public bool IsSelected
@@ -37,6 +40,10 @@ public sealed class ExplorerTreeRow : INotifyPropertyChanged
             OnPropertyChanged();
         }
     }
+
+    public string Glyph => ExplorerTreeChrome.Glyph(HasChildren, IsExpanded);
+
+    public double IndentWidth => ExplorerTreeChrome.IndentWidth(Indent);
 
     public string ComponentPrefix
     {
@@ -119,7 +126,8 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     public void LoadTree(FormulaAstNode root, string formulaText)
     {
         _root = root;
-        _isFullyExpanded = true;
+        _isFullyExpanded = false;
+        FormulaAstParser.CollapseAll(root);
         FormulaText = formulaText;
         RefreshRows();
         if (Rows.Count > 0) ApplySelection(0, navigate: false);
@@ -170,7 +178,10 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
                 IsActiveBranch = node.IsActiveBranch,
                 HasChildren = node.Children.Count > 0,
                 IsExpanded = node.IsExpanded,
-                IsSelected = false
+                IsSelected = false,
+                SourceStart = node.SourceStart,
+                SourceLength = node.SourceLength,
+                Kind = node.Kind
             });
         }
 
@@ -184,10 +195,10 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         }
     }
 
-    public void SelectRow(int index)
+    public void SelectRow(int index, bool navigate = true)
     {
         if (index < 0 || index >= Rows.Count) return;
-        ApplySelection(index, navigate: true);
+        ApplySelection(index, navigate);
     }
 
     public void MoveSelection(int delta)
@@ -197,15 +208,34 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         SelectRow(next);
     }
 
+    public void ToggleExpand(string id)
+    {
+        if (_root == null || string.IsNullOrWhiteSpace(id)) return;
+        var node = FindNode(_root, id);
+        if (node == null || node.Children.Count == 0) return;
+        node.IsExpanded = !node.IsExpanded;
+        RefreshRows();
+        SelectById(id);
+    }
+
     public void ExpandSelected()
     {
         if (_selectedIndex < 0 || _root == null) return;
         var row = Rows[_selectedIndex];
         var node = FindNode(_root, row.Id);
-        if (node == null || node.Children.Count == 0 || node.IsExpanded) return;
-        node.IsExpanded = true;
-        RefreshRows();
-        SelectById(row.Id);
+        if (node == null || node.Children.Count == 0) return;
+        if (!node.IsExpanded)
+        {
+            node.IsExpanded = true;
+            RefreshRows();
+            SelectById(row.Id);
+            return;
+        }
+
+        if (_selectedIndex + 1 < Rows.Count && Rows[_selectedIndex + 1].Indent > row.Indent)
+        {
+            SelectRow(_selectedIndex + 1);
+        }
     }
 
     public void CollapseSelectedOrMoveToParent()
@@ -286,6 +316,23 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         }
 
         NavigateRequested?.Invoke(Rows[firstMatch]);
+    }
+
+    public IReadOnlyList<FormulaHighlightSpan> SelectedFormulaSpans()
+    {
+        var selected = new List<FormulaHighlightSpan>();
+        foreach (var row in Rows)
+        {
+            if (!row.IsSelected) continue;
+            selected.Add(new FormulaHighlightSpan
+            {
+                Start = row.SourceStart,
+                Length = row.SourceLength,
+                IsOrigin = row.Kind == FormulaNodeKind.Root
+            });
+        }
+
+        return FormulaHighlight.ForSelectedRows(selected);
     }
 
     public IReadOnlyList<string> SelectedLocations()

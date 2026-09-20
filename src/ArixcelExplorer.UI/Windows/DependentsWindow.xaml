@@ -32,7 +32,9 @@
               ItemContainerStyle="{StaticResource ArixcelListRowStyle}"
               ItemsSource="{Binding Rows}"
               SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
-              SelectionMode="Single">
+              SelectionMode="Single"
+              KeyboardNavigation.DirectionalNavigation="None"
+              PreviewKeyDown="Window_PreviewKeyDown">
       <ListView.View>
         <GridView AllowsColumnReorder="False">
           <GridViewColumn Header="Element" DisplayMemberBinding="{Binding AddressDisplay}"

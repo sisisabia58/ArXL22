@@ -26,6 +26,8 @@ public sealed class ExplorerSession
     private readonly List<SessionWindow> _windows = new();
     private readonly ExplorerStack _origins = new();
     private bool _closingAll;
+    private System.Windows.Input.Key _lastKey;
+    private int _lastKeyTick;
 
     public bool HasOpenWindows => _windows.Count > 0;
 
@@ -47,6 +49,24 @@ public sealed class ExplorerSession
         if (index > 0) return _windows[index - 1].Origin;
         if (index == 0) return _windows[0].Origin;
         return _origins.First;
+    }
+
+    public bool DispatchKey(System.Windows.Input.Key key)
+    {
+        var top = _windows.LastOrDefault()?.Window;
+        if (top == null) return false;
+
+        var tick = Environment.TickCount;
+        if (key == _lastKey && tick - _lastKeyTick < 20) return true;
+        _lastKey = key;
+        _lastKeyTick = tick;
+
+        return top switch
+        {
+            ExplorerWindow explorer => explorer.TryHandleExplorerKey(key),
+            DependentsWindow dependents => dependents.TryHandleExplorerKey(key),
+            _ => false
+        };
     }
 
     public void ActivateLatest()

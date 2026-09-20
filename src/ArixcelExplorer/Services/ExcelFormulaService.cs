@@ -91,6 +91,68 @@ public sealed class ExcelFormulaService
             FormulaEvaluator.EnrichTree(tree, _evalContext, ws.Name);
         }
 
+        AttachValidationSource(tree, cell, ws?.Name ?? "");
         return tree;
+    }
+
+    private void AttachValidationSource(FormulaAstNode tree, Excel.Range cell, string worksheetName)
+    {
+        try
+        {
+            var validation = cell.Validation;
+            if (validation == null) return;
+            if (Convert.ToInt32(validation.Type) != 3) return;
+
+            var formula1 = validation.Formula1?.ToString() ?? "";
+            var source = ValidationListParser.TryParse(formula1, worksheetName);
+            if (source == null) return;
+
+            if (source.IsNamedRange)
+            {
+                var resolved = ResolveNamedRangeAddress(source.Location, worksheetName);
+                if (!string.IsNullOrWhiteSpace(resolved))
+                {
+                    source.Location = resolved!;
+                }
+            }
+            else
+            {
+                source.Location = TraceUtils.QualifyAddress(source.Location, $"'{worksheetName}'!A1");
+            }
+
+            FormulaAstParser.AttachValidationSource(tree, source);
+        }
+        catch
+        {
+            // Excel throws when the cell has no validation.
+        }
+    }
+
+    private string? ResolveNamedRangeAddress(string name, string worksheetName)
+    {
+        try
+        {
+            var workbook = _app.ActiveWorkbook;
+            if (workbook != null)
+            {
+                foreach (Excel.Name named in workbook.Names)
+                {
+                    if (string.Equals(named.Name, name, StringComparison.OrdinalIgnoreCase) ||
+                        named.Name.EndsWith("!" + name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var range = named.RefersToRange;
+                        var ws = range.Worksheet as Excel.Worksheet;
+                        return $"'{ws?.Name}'!{range.Address[false, false]}";
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // named range may not resolve
+        }
+
+        _ = worksheetName;
+        return null;
     }
 }

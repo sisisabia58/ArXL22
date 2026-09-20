@@ -1,5 +1,4 @@
-using System.IO;
-using System.Reflection;
+using System;
 using System.Runtime.InteropServices;
 using ArixcelExplorer.Services;
 using Microsoft.Office.Core;
@@ -7,26 +6,32 @@ using Microsoft.Office.Core;
 namespace ArixcelExplorer.Ribbon;
 
 [ComVisible(true)]
+[ClassInterface(ClassInterfaceType.AutoDispatch)]
 public sealed class ArixcelRibbon : IRibbonExtensibility
 {
+    private static IRibbonUI? SharedUi;
     private IRibbonUI? _ribbon;
 
-    public string GetCustomUI(string ribbonId)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var resourceName = "ArixcelExplorer.Ribbon.ArixcelRibbon.xml";
-        using var stream = assembly.GetManifestResourceStream(resourceName);
-        if (stream != null)
-        {
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd();
-        }
+    public string GetCustomUI(string ribbonId) => RibbonXml.Load("VSTO", ribbonId);
 
-        var path = Path.Combine(Path.GetDirectoryName(assembly.Location) ?? "", "Ribbon", "ArixcelRibbon.xml");
-        return File.Exists(path) ? File.ReadAllText(path) : "<customUI/>";
+    public void OnLoad(IRibbonUI ribbonUi)
+    {
+        _ribbon = ribbonUi;
+        SharedUi = ribbonUi;
+        AddInLog.Info("Ribbon OnLoad");
     }
 
-    public void OnLoad(IRibbonUI ribbonUi) => _ribbon = ribbonUi;
+    public static void Invalidate()
+    {
+        try
+        {
+            SharedUi?.Invalidate();
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
+    }
 
     public void OnExplorePrecedents(IRibbonControl control) => AddInCoordinator.OpenExplorer();
     public void OnExploreDependents(IRibbonControl control) => AddInCoordinator.OpenDependents();

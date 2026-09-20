@@ -104,7 +104,11 @@
     <Compile Include="ComApi\IArixcelComApi.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Ribbon\ArixcelRibbon.cs" />
+    <Compile Include="Ribbon\EmptyRibbon.cs" />
+    <Compile Include="Ribbon\RibbonXml.cs" />
     <Compile Include="Services\AddInCoordinator.cs" />
+    <Compile Include="Services\AddInLog.cs" />
+    <Compile Include="Services\ExcelArrowHook.cs" />
     <Compile Include="Services\ExcelAuditService.cs" />
     <Compile Include="Services\ExcelCompareService.cs" />
     <Compile Include="Services\ExcelFormulaService.cs" />

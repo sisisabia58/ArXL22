@@ -18,6 +18,12 @@ Public Sub Auto_Close()
     Application.OnKey "^q"
     Application.OnKey "^+q"
     Application.OnKey "^{BS}"
+    Application.OnKey "{UP}"
+    Application.OnKey "{DOWN}"
+    Application.OnKey "{LEFT}"
+    Application.OnKey "{RIGHT}"
+    Application.OnKey "{RETURN}"
+    Application.OnKey "{ESC}"
 End Sub
 
 Public Sub EXLerate_OpenExplorer()
@@ -30,6 +36,38 @@ End Sub
 
 Public Sub EXLerate_ReturnToOrigin()
     InvokeComAddIn "ReturnToOrigin"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyUp()
+    InvokeExplorerKey "Up"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyDown()
+    InvokeExplorerKey "Down"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyLeft()
+    InvokeExplorerKey "Left"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyRight()
+    InvokeExplorerKey "Right"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyEnter()
+    InvokeExplorerKey "Enter"
+End Sub
+
+Public Sub EXLerate_ExplorerKeyEscape()
+    InvokeExplorerKey "Escape"
+End Sub
+
+Private Sub InvokeExplorerKey(ByVal keyName As String)
+    On Error Resume Next
+    Dim api As Object
+    Set api = ResolveApi()
+    If api Is Nothing Then Exit Sub
+    api.DispatchExplorerKey keyName
 End Sub
 
 Private Sub InvokeComAddIn(ByVal methodName As String)
@@ -55,13 +93,14 @@ End Sub
 
 Private Function ResolveApi() As Object
     On Error Resume Next
-    Set ResolveApi = TryResolve(VSTO_ADDIN_PROG_ID)
-    If Not ResolveApi Is Nothing Then Exit Function
-    Set ResolveApi = TryResolve(LEGACY_VSTO_ADDIN_PROG_ID)
-    If Not ResolveApi Is Nothing Then Exit Function
+    ' ComApi OnConnection always initializes. VSTO .Object can exist before Startup.
     Set ResolveApi = TryResolve(COM_ADDIN_PROG_ID)
     If Not ResolveApi Is Nothing Then Exit Function
     Set ResolveApi = TryResolve(LEGACY_COM_ADDIN_PROG_ID)
+    If Not ResolveApi Is Nothing Then Exit Function
+    Set ResolveApi = TryResolve(VSTO_ADDIN_PROG_ID)
+    If Not ResolveApi Is Nothing Then Exit Function
+    Set ResolveApi = TryResolve(LEGACY_VSTO_ADDIN_PROG_ID)
 End Function
 
 Private Function TryResolve(ByVal progId As String) As Object

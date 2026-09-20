@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,6 +14,8 @@ public partial class DependentsWindow : Window
     private bool _explicitClose;
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
+
+    public IntPtr WindowHandle => ExplorerWindowFocus.HandleOf(this);
 
     public DependentsWindow(DependentsViewModel viewModel, ExplorerCloseBehavior closeBehavior)
     {
@@ -42,7 +45,8 @@ public partial class DependentsWindow : Window
         if (_viewModel.Rows.Count == 0) return;
         var index = _viewModel.SelectedIndex >= 0 ? _viewModel.SelectedIndex : 0;
         DependentsGrid.SelectedIndex = index;
-        _viewModel.SelectRow(index);
+        _viewModel.SelectRow(index, navigate: false);
+        RestoreKeyboardFocus();
         if (DependentsGrid.SelectedItem != null)
         {
             DependentsGrid.ScrollIntoView(DependentsGrid.SelectedItem);
@@ -51,13 +55,34 @@ public partial class DependentsWindow : Window
 
     public void RestoreKeyboardFocus()
     {
-        Activate();
+        ExplorerWindowFocus.Reclaim(this);
         DependentsGrid.Focus();
         if (DependentsGrid.SelectedItem != null)
         {
             var row = DependentsGrid.ItemContainerGenerator.ContainerFromItem(DependentsGrid.SelectedItem) as ListViewItem;
             row?.Focus();
             DependentsGrid.Focus();
+        }
+    }
+
+    public bool TryHandleExplorerKey(Key key)
+    {
+        switch (key)
+        {
+            case Key.Up:
+                _viewModel.MoveSelection(-1);
+                return true;
+            case Key.Down:
+                _viewModel.MoveSelection(1);
+                return true;
+            case Key.Enter:
+                _viewModel.RequestKeepClose();
+                return true;
+            case Key.Escape:
+                _viewModel.RequestBackClose();
+                return true;
+            default:
+                return false;
         }
     }
 
@@ -73,12 +98,10 @@ public partial class DependentsWindow : Window
         switch (e.Key)
         {
             case Key.Up:
-                _viewModel.MoveSelection(-1);
-                e.Handled = true;
-                break;
             case Key.Down:
-                _viewModel.MoveSelection(1);
-                e.Handled = true;
+            case Key.Enter:
+            case Key.Escape:
+                e.Handled = TryHandleExplorerKey(e.Key);
                 break;
             case Key.Q when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift):
                 _viewModel.HandleCtrlShiftQ();
@@ -86,14 +109,6 @@ public partial class DependentsWindow : Window
                 break;
             case Key.R when Keyboard.Modifiers == ModifierKeys.Alt:
                 _viewModel.RequestRefresh();
-                e.Handled = true;
-                break;
-            case Key.Enter:
-                _viewModel.RequestKeepClose();
-                e.Handled = true;
-                break;
-            case Key.Escape:
-                _viewModel.RequestBackClose();
                 e.Handled = true;
                 break;
         }

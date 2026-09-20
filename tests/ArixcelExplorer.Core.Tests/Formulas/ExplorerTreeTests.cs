@@ -47,6 +47,29 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
+    public void CollapseAll_leaves_function_row_with_plus_glyph()
+    {
+        var tree = FormulaAstParser.Parse("=SUMIFS(A1:A5,B1:B5,C1)", "'S'!G15", "1");
+        FormulaAstParser.CollapseAll(tree);
+        var rows = FormulaAstParser.FlattenVisible(tree);
+        var function = Assert.Single(rows, node => node.Label == "SUMIFS");
+
+        Assert.True(function.Children.Count > 0);
+        Assert.False(function.IsExpanded);
+        Assert.Equal("+", ExplorerTreeChrome.Glyph(function.Children.Count > 0, function.IsExpanded));
+        Assert.DoesNotContain(rows, node => node.Info == "sum_range");
+    }
+
+    [Theory]
+    [InlineData(true, true, "-")]
+    [InlineData(true, false, "+")]
+    [InlineData(false, false, "")]
+    public void Glyph_matches_folder_tree_plus_minus(bool hasChildren, bool expanded, string expected)
+    {
+        Assert.Equal(expected, ExplorerTreeChrome.Glyph(hasChildren, expanded));
+    }
+
+    [Fact]
     public void QualifyAddress_prefixes_sheet_from_origin()
     {
         var qualified = TraceUtils.QualifyAddress("A1:A5", "'Sheet 1'!C1");
@@ -103,5 +126,49 @@ public sealed class ExplorerTreeTests
         Assert.Equal("criteria_range1", FunctionArgInfo.LabelFor("SUMIFS", 1));
         Assert.Equal("criteria1", FunctionArgInfo.LabelFor("SUMIFS", 2));
         Assert.Equal("", FunctionArgInfo.LabelFor("SUM", 0));
+    }
+
+    [Fact]
+    public void Parse_records_display_spans_for_if_logical_test()
+    {
+        const string formula = "=IF(I$3>4,A1,B1)";
+        var tree = FormulaAstParser.Parse(formula, "'Calcs'!I3", "0");
+        var logical = FormulaAstParser.FlattenVisible(tree).First(node => node.Info == "logical_test");
+
+        Assert.True(logical.SourceLength > 0);
+        Assert.Equal("I$3>4", formula.Substring(logical.SourceStart, logical.SourceLength));
+        Assert.Equal("#7FDBFF", FormulaHighlight.CyanHex);
+        var spans = FormulaHighlight.ForSelectedRows(new[]
+        {
+            new FormulaHighlightSpan { Start = logical.SourceStart, Length = logical.SourceLength, IsOrigin = false }
+        });
+        Assert.Single(spans);
+        Assert.Equal(logical.SourceStart, spans[0].Start);
+    }
+
+    [Fact]
+    public void FormulaHighlight_skips_origin_row()
+    {
+        var spans = FormulaHighlight.ForSelectedRows(new[]
+        {
+            new FormulaHighlightSpan { Start = 0, Length = 10, IsOrigin = true }
+        });
+        Assert.Empty(spans);
+    }
+
+    [Fact]
+    public void AttachValidationSource_adds_validation_child()
+    {
+        var tree = FormulaAstParser.Parse("", "'S'!A1", "x");
+        FormulaAstParser.AttachValidationSource(tree, new ValidationListSource
+        {
+            Label = "$A$1:$A$10",
+            Location = "'S'!$A$1:$A$10",
+            IsNamedRange = false
+        });
+
+        var row = FormulaAstParser.FlattenVisible(tree).Single(node => node.Info == "validation");
+        Assert.Equal("$A$1:$A$10", row.Label);
+        Assert.Equal("'S'!$A$1:$A$10", row.Location);
     }
 }

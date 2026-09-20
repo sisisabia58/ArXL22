@@ -10,21 +10,54 @@ public partial class ThisAddIn
 
     private void ThisAddIn_Startup(object sender, EventArgs e)
     {
-        AddInCoordinator.Initialize(Application);
-        _comApi ??= new ArixcelComApi();
+        try
+        {
+            AddInLog.Info("ThisAddIn_Startup");
+            AddInCoordinator.Initialize(Application);
+            EnsureComApi().Attach(Application);
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
     }
 
     private void ThisAddIn_Shutdown(object sender, EventArgs e)
     {
-        AddInCoordinator.CloseAllExplorers();
-        AddInCoordinator.ClearFormulaMap();
+        try
+        {
+            AddInCoordinator.CloseAllExplorers();
+            AddInCoordinator.ClearFormulaMap();
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
+
         _comApi = null;
     }
 
     protected override object RequestComAddInAutomationService()
     {
-        return _comApi ??= new ArixcelComApi();
+        AddInLog.Info("RequestComAddInAutomationService");
+        try
+        {
+            if (Application != null)
+            {
+                AddInCoordinator.Initialize(Application);
+            }
+        }
+        catch (Exception ex)
+        {
+            AddInLog.Error(ex);
+        }
+
+        var api = EnsureComApi();
+        api.Attach(Application);
+        return api;
     }
+
+    private ArixcelComApi EnsureComApi() => _comApi ??= new ArixcelComApi();
 
     private void InternalStartup()
     {

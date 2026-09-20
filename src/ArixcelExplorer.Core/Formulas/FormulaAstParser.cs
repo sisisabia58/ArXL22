@@ -27,6 +27,8 @@ public sealed class FormulaAstNode
     public bool IsActiveBranch { get; set; }
     public bool IsExpanded { get; set; } = true;
     public string? ParentId { get; set; }
+    public int SourceStart { get; set; }
+    public int SourceLength { get; set; }
     public List<FormulaAstNode> Children { get; set; } = new();
 }
 
@@ -62,11 +64,48 @@ public static class FormulaAstParser
             {
                 Kind = FormulaNodeKind.Error,
                 Label = normalized,
-                ParentId = root.Id
+                ParentId = root.Id,
+                SourceStart = 0,
+                SourceLength = normalized.Length
             });
         }
 
+        ApplyDisplayOffset(root, DisplayPrefixLength(formula));
         return root;
+    }
+
+    public static void AttachValidationSource(FormulaAstNode root, ValidationListSource source)
+    {
+        var kind = source.IsNamedRange ? FormulaNodeKind.NamedRange : FormulaNodeKind.Reference;
+        root.Children.Add(new FormulaAstNode
+        {
+            Kind = kind,
+            Label = source.Label,
+            Info = "validation",
+            Location = source.Location,
+            ParentId = root.Id
+        });
+    }
+
+    private static int DisplayPrefixLength(string formula)
+    {
+        var trimmed = formula.Trim();
+        if (trimmed.StartsWith("{=", StringComparison.Ordinal)) return 2;
+        if (trimmed.StartsWith("=", StringComparison.Ordinal)) return 1;
+        return 0;
+    }
+
+    private static void ApplyDisplayOffset(FormulaAstNode node, int prefix)
+    {
+        if (prefix != 0 && node.Kind != FormulaNodeKind.Root && node.SourceLength > 0)
+        {
+            node.SourceStart += prefix;
+        }
+
+        foreach (var child in node.Children)
+        {
+            ApplyDisplayOffset(child, prefix);
+        }
     }
 
     public static IReadOnlyList<FormulaAstNode> FlattenVisible(FormulaAstNode root)
@@ -125,19 +164,21 @@ public static class FormulaAstParser
 
         var name = nameMatch.Groups[1].Value.ToUpperInvariant();
         var openParen = start + nameMatch.Length - 1;
-        var args = ParseArgumentList(input, openParen + 1, parentId);
         node.Kind = FormulaNodeKind.Function;
         node.Label = name;
+        node.SourceStart = start;
+        var args = ParseArgumentList(input, openParen + 1, node.Id);
         node.Children = args.Nodes;
         for (var i = 0; i < node.Children.Count; i++)
         {
             node.Children[i].Info = FunctionArgInfo.LabelFor(name, i);
         }
         end = args.EndIndex + 1;
+        node.SourceLength = end - start;
         return true;
     }
 
-    private static (List<FormulaAstNode> Nodes, int EndIndex) ParseArgumentList(string input, int start, string? parentId)
+    private static (List<FormulaAstNode> Nodes, int EndIndex) ParseArgumentList(string input, int start, string functionId)
     {
         var nodes = new List<FormulaAstNode>();
         var index = start;
@@ -153,10 +194,10 @@ public static class FormulaAstParser
                 depth -= 1;
                 if (depth == 0)
                 {
-                    var argText = input.Substring(argStart, index - argStart).Trim();
-                    if (argText.Length > 0)
+                    if (index > argStart)
                     {
-                        nodes.Add(ParseArgument(argText, parentId));
+                        var slice = ParseSlice(input, argStart, index, functionId);
+                        if (slice != null) nodes.Add(slice);
                     }
 
                     return (nodes, index);
@@ -164,12 +205,8 @@ public static class FormulaAstParser
             }
             else if (ch == ',' && depth == 1)
             {
-                var argText = input.Substring(argStart, index - argStart).Trim();
-                if (argText.Length > 0)
-                {
-                    nodes.Add(ParseArgument(argText, parentId));
-                }
-
+                var slice = ParseSlice(input, argStart, index, functionId);
+                if (slice != null) nodes.Add(slice);
                 argStart = index + 1;
             }
 
@@ -179,54 +216,64 @@ public static class FormulaAstParser
         return (nodes, index);
     }
 
-    private static FormulaAstNode ParseArgument(string text, string? parentId)
+    private static FormulaAstNode? ParseSlice(string input, int start, int endExclusive, string? parentId)
     {
-        if (TryParseFunction(text, 0, parentId, out var fn, out _))
+        var sliceStart = start;
+        while (sliceStart < endExclusive && char.IsWhiteSpace(input[sliceStart])) sliceStart += 1;
+        var sliceEnd = endExclusive;
+        while (sliceEnd > sliceStart && char.IsWhiteSpace(input[sliceEnd - 1])) sliceEnd -= 1;
+        if (sliceEnd <= sliceStart) return null;
+
+        if (TryParseFunction(input, sliceStart, parentId, out var fn, out _))
         {
             return fn;
         }
 
-        if (LooksLikeReference(text))
-        {
-            return new FormulaAstNode
+        var text = input.Substring(sliceStart, sliceEnd - sliceStart);
+        var node = LooksLikeReference(text)
+            ? new FormulaAstNode
             {
                 Kind = FormulaNodeKind.Reference,
                 Label = text,
                 Location = text,
                 ParentId = parentId
+            }
+            : new FormulaAstNode
+            {
+                Kind = FormulaNodeKind.Literal,
+                Label = text,
+                Value = text,
+                ParentId = parentId
             };
-        }
-
-        return new FormulaAstNode
-        {
-            Kind = FormulaNodeKind.Literal,
-            Label = text,
-            Value = text,
-            ParentId = parentId
-        };
+        node.SourceStart = sliceStart;
+        node.SourceLength = sliceEnd - sliceStart;
+        return node;
     }
 
     private static (FormulaAstNode Node, int NextIndex) ParseAtom(string input, int start, string? parentId, string contextLocation)
     {
-        var remaining = input.Substring(start).Trim();
-        if (LooksLikeReference(remaining))
-        {
-            return (new FormulaAstNode
+        var remainingStart = start;
+        while (remainingStart < input.Length && char.IsWhiteSpace(input[remainingStart])) remainingStart += 1;
+        var remaining = input.Substring(remainingStart);
+        var node = LooksLikeReference(remaining.Trim())
+            ? new FormulaAstNode
             {
                 Kind = FormulaNodeKind.Reference,
-                Label = remaining,
-                Location = remaining,
+                Label = remaining.Trim(),
+                Location = remaining.Trim(),
                 ParentId = parentId
-            }, input.Length);
-        }
-
-        return (new FormulaAstNode
-        {
-            Kind = FormulaNodeKind.Literal,
-            Label = remaining,
-            Value = remaining,
-            ParentId = parentId
-        }, input.Length);
+            }
+            : new FormulaAstNode
+            {
+                Kind = FormulaNodeKind.Literal,
+                Label = remaining.Trim(),
+                Value = remaining.Trim(),
+                ParentId = parentId
+            };
+        node.SourceStart = remainingStart;
+        node.SourceLength = remaining.Trim().Length;
+        _ = contextLocation;
+        return (node, input.Length);
     }
 
     private static bool LooksLikeReference(string text)
