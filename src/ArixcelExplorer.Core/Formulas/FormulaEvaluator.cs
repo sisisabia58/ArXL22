@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.Core.Formulas;
 
@@ -31,9 +32,23 @@ public static class FormulaEvaluator
 
     private static void EnrichNode(FormulaAstNode node, IFormulaEvaluationContext context, string worksheetName)
     {
+        foreach (var child in node.Children)
+        {
+            EnrichNode(child, context, worksheetName);
+        }
+
         switch (node.Kind)
         {
             case FormulaNodeKind.Reference:
+            case FormulaNodeKind.NamedRange:
+                var location = TraceUtils.QualifyAddress(
+                    string.IsNullOrWhiteSpace(node.Location) ? node.Label : node.Location ?? "",
+                    $"'{worksheetName}'!A1");
+                if (!string.IsNullOrEmpty(location))
+                {
+                    node.Location = location;
+                }
+
                 if (node.Location != null && context.TryResolveReferenceValue(node.Location, out var refValue))
                 {
                     node.Value = refValue;
@@ -43,11 +58,17 @@ public static class FormulaEvaluator
             case FormulaNodeKind.Function:
                 EnrichFunction(node, context, worksheetName);
                 break;
-        }
+            case FormulaNodeKind.Operator:
+                if (!string.IsNullOrWhiteSpace(node.Label))
+                {
+                    var evaluated = context.EvaluateSubExpression("=" + node.Label, worksheetName);
+                    if (!string.IsNullOrEmpty(evaluated))
+                    {
+                        node.Value = evaluated;
+                    }
+                }
 
-        foreach (var child in node.Children)
-        {
-            EnrichNode(child, context, worksheetName);
+                break;
         }
     }
 

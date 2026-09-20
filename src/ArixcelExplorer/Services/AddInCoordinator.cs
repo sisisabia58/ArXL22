@@ -289,9 +289,10 @@ public static class AddInCoordinator
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(row.Location)) return;
+                if (string.IsNullOrWhiteSpace(row.NavigationAddress) && string.IsNullOrWhiteSpace(row.Location)) return;
                 var hwnd = window?.WindowHandle ?? IntPtr.Zero;
-                _traceService!.NavigateToAddress(row.Location, stealFocus: false, reclaimHwnd: hwnd);
+                var target = string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.Location : row.NavigationAddress;
+                _traceService!.NavigateToAddress(target, stealFocus: false, reclaimHwnd: hwnd);
                 _highlightService!.SetTransientMany(
                     ownerId,
                     vm.SelectedLocations(),

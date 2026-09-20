@@ -22,6 +22,7 @@ public sealed class ExplorerTreeRow : INotifyPropertyChanged
     public string Info { get; set; } = "";
     public string Value { get; set; } = "";
     public string Location { get; set; } = "";
+    public string NavigationAddress { get; set; } = "";
     public bool IsActiveBranch { get; set; }
     public bool HasChildren { get; set; }
     public bool IsExpanded { get; set; }
@@ -126,8 +127,8 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     public void LoadTree(FormulaAstNode root, string formulaText)
     {
         _root = root;
-        _isFullyExpanded = false;
-        FormulaAstParser.CollapseAll(root);
+        _isFullyExpanded = true;
+        FormulaAstParser.CollapseFunctions(root);
         FormulaText = formulaText;
         RefreshRows();
         if (Rows.Count > 0) ApplySelection(0, navigate: false);
@@ -151,12 +152,14 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
 
         foreach (var node in FormulaAstParser.FlattenVisible(_root))
         {
-                var rawLocation = node.Location ?? "";
-                var location = string.IsNullOrWhiteSpace(rawLocation)
-                    ? ""
-                    : TraceUtils.QualifyAddress(rawLocation, RootAddress);
+            var rawLocation = node.Location ?? "";
+            var qualified = string.IsNullOrWhiteSpace(rawLocation)
+                ? ""
+                : TraceUtils.QualifyAddress(rawLocation, RootAddress);
+            var location = node.Kind is FormulaNodeKind.Literal or FormulaNodeKind.Operator or FormulaNodeKind.Error
+                ? ""
+                : TraceUtils.FormatExplorerLocation(qualified, RootAddress);
             var component = node.Label;
-            // Origin row: drop 'Sheet'! prefix from Element when label already equals Location.
             if (node.Kind == FormulaNodeKind.Root &&
                 string.Equals(node.Label, node.Location, System.StringComparison.OrdinalIgnoreCase))
             {
@@ -175,6 +178,7 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
                 Info = node.Info,
                 Value = node.Value ?? "",
                 Location = location,
+                NavigationAddress = qualified,
                 IsActiveBranch = node.IsActiveBranch,
                 HasChildren = node.Children.Count > 0,
                 IsExpanded = node.IsExpanded,
@@ -340,9 +344,9 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         var locations = new List<string>();
         foreach (var row in Rows)
         {
-            if (row.IsSelected && !string.IsNullOrWhiteSpace(row.Location))
+            if (row.IsSelected && !string.IsNullOrWhiteSpace(row.NavigationAddress))
             {
-                locations.Add(row.Location);
+                locations.Add(row.NavigationAddress);
             }
         }
 

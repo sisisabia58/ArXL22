@@ -157,10 +157,53 @@ public static class TraceUtils
         if (string.IsNullOrWhiteSpace(address)) return "";
         var trimmed = address.Trim();
         if (ParseWorksheetScopedAddress(trimmed) != null) return trimmed;
+        if (!CanQualifyAsAddress(trimmed)) return "";
         var context = ParseWorksheetScopedAddress(contextAddress);
         if (context == null) return trimmed;
         return $"'{context.WorksheetName}'!{trimmed}";
     }
+
+    public static string FormatExplorerLocation(string? location, string originAddress)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return "";
+        var qualified = QualifyAddress(location ?? "", originAddress);
+        var parsed = ParseWorksheetScopedAddress(string.IsNullOrEmpty(qualified) ? location.Trim() : qualified);
+        if (parsed == null || !IsRangeAddress(parsed.RangeAddress)) return "";
+
+        var shortRange = StripAbsolute(parsed.RangeAddress);
+        var origin = ParseWorksheetScopedAddress(originAddress);
+        if (origin != null &&
+            string.Equals(origin.WorksheetName, parsed.WorksheetName, StringComparison.OrdinalIgnoreCase))
+        {
+            return shortRange;
+        }
+
+        return $"'{parsed.WorksheetName}'!{shortRange}";
+    }
+
+    public static bool IsRangeAddress(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return false;
+        var trimmed = address.Trim();
+        var parsed = ParseWorksheetScopedAddress(trimmed);
+        var range = parsed?.RangeAddress ?? trimmed;
+        var parts = range.Split(':');
+        if (parts.Length is not (1 or 2)) return false;
+        foreach (var part in parts)
+        {
+            if (ParseCellAddress(part) == null) return false;
+        }
+
+        return true;
+    }
+
+    private static bool CanQualifyAsAddress(string trimmed)
+    {
+        if (IsRangeAddress(trimmed)) return true;
+        return Regex.IsMatch(trimmed, @"^[A-Za-z_\\][A-Za-z0-9_.]*$");
+    }
+
+    private static string StripAbsolute(string range) => range.Replace("$", "");
 
     public static (int Row, int Col)? ParseCellAddress(string address)
     {

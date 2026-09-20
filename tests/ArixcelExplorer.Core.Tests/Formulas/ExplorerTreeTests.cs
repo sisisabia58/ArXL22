@@ -157,6 +157,85 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
+    public void Parse_splits_same_sheet_product_into_cell_and_comparison_rows()
+    {
+        const string formula = "=$D$8/4*$D$7*(E31>=$D$16)*(E31<=$D$17)";
+        const string origin = "'Net Investor Returns (Insti)'!I36";
+        var tree = FormulaAstParser.Parse(formula, origin, "114732.47");
+        var rows = FormulaAstParser.FlattenVisible(tree);
+        var labels = rows.Select(DisplayLabel).ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "I36",
+                "$D$8",
+                "4",
+                "$D$7",
+                "E31>=$D$16",
+                "E31",
+                "$D$16",
+                "E31<=$D$17",
+                "E31",
+                "$D$17"
+            },
+            labels);
+
+        var d17 = Assert.Single(rows, node => node.Label == "$D$17");
+        Assert.Equal(FormulaNodeKind.Reference, d17.Kind);
+        Assert.Equal("'Net Investor Returns (Insti)'!$D$17", d17.Location);
+        Assert.Equal("$D$17", formula.Substring(d17.SourceStart, d17.SourceLength));
+        Assert.Equal("D17", TraceUtils.FormatExplorerLocation(d17.Location, origin));
+    }
+
+    [Fact]
+    public void LooksLikeReference_requires_a_complete_address()
+    {
+        Assert.True(FormulaAstParser.LooksLikeReference("$D$8"));
+        Assert.True(FormulaAstParser.LooksLikeReference("E31"));
+        Assert.True(FormulaAstParser.LooksLikeReference("A1:A5"));
+        Assert.False(FormulaAstParser.LooksLikeReference("$D$8/4*$D$7"));
+        Assert.False(FormulaAstParser.LooksLikeReference("E31>=$D$16"));
+    }
+
+    [Fact]
+    public void FormatExplorerLocation_shows_same_sheet_cell_without_sheet_or_dollars()
+    {
+        const string origin = "'Net Investor Returns (Insti)'!I36";
+        Assert.Equal("D17", TraceUtils.FormatExplorerLocation("'Net Investor Returns (Insti)'!$D$17", origin));
+        Assert.Equal("I36", TraceUtils.FormatExplorerLocation(origin, origin));
+        Assert.Equal("'Other'!A1", TraceUtils.FormatExplorerLocation("'Other'!$A$1", origin));
+        Assert.Equal("", TraceUtils.FormatExplorerLocation("E31>=$D$16", origin));
+        Assert.Equal("", TraceUtils.FormatExplorerLocation("$D$8/4*$D$7", origin));
+    }
+
+    [Fact]
+    public void CollapseFunctions_keeps_operator_rows_expanded()
+    {
+        var arithmetic = FormulaAstParser.Parse(
+            "=$D$8/4*$D$7*(E31>=$D$16)*(E31<=$D$17)",
+            "'S'!I36",
+            "1");
+        FormulaAstParser.CollapseFunctions(arithmetic);
+        var arithRows = FormulaAstParser.FlattenVisible(arithmetic);
+        Assert.Contains(arithRows, node => node.Label == "$D$17");
+
+        var sumifs = FormulaAstParser.Parse("=SUMIFS(A1:A5,B1:B5,C1)", "'S'!G15", "1");
+        FormulaAstParser.CollapseFunctions(sumifs);
+        var functionRows = FormulaAstParser.FlattenVisible(sumifs);
+        var function = Assert.Single(functionRows, node => node.Label.StartsWith("SUMIFS"));
+        Assert.False(function.IsExpanded);
+        Assert.DoesNotContain(functionRows, node => node.Info == "sum_range");
+    }
+
+    [Fact]
+    public void QualifyAddress_does_not_prefix_operator_text()
+    {
+        Assert.Equal("", TraceUtils.QualifyAddress("$D$8/4*$D$7", "'S'!I36"));
+        Assert.Equal("'S'!$D$8", TraceUtils.QualifyAddress("$D$8", "'S'!I36"));
+    }
+
+    [Fact]
     public void AttachValidationSource_adds_validation_child()
     {
         var tree = FormulaAstParser.Parse("", "'S'!A1", "x");
@@ -170,5 +249,16 @@ public sealed class ExplorerTreeTests
         var row = FormulaAstParser.FlattenVisible(tree).Single(node => node.Info == "validation");
         Assert.Equal("$A$1:$A$10", row.Label);
         Assert.Equal("'S'!$A$1:$A$10", row.Location);
+    }
+
+    private static string DisplayLabel(FormulaAstNode node)
+    {
+        if (node.Kind == FormulaNodeKind.Root)
+        {
+            var parsed = TraceUtils.ParseWorksheetScopedAddress(node.Label);
+            return parsed?.RangeAddress ?? node.Label;
+        }
+
+        return node.Label;
     }
 }

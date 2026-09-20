@@ -35,6 +35,12 @@ public sealed class ExcelFormulaEvaluationContext : IFormulaEvaluationContext
         try
         {
             var parsed = Core.Tracing.TraceUtils.ParseWorksheetScopedAddress(reference);
+            if (parsed == null)
+            {
+                var sheetName = (_app.ActiveSheet as Excel.Worksheet)?.Name ?? "";
+                parsed = Core.Tracing.TraceUtils.ParseWorksheetScopedAddress(
+                    TraceUtils.QualifyAddress(reference, $"'{sheetName}'!A1"));
+            }
             if (parsed == null) return false;
             var sheet = FindWorksheet(parsed.WorksheetName);
             if (sheet == null) return false;
