@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.UI.ViewModels;
@@ -54,14 +55,21 @@ public partial class DependentsWindow : Window
         DependentsGrid.Focus();
         if (DependentsGrid.SelectedItem != null)
         {
-            var row = DependentsGrid.ItemContainerGenerator.ContainerFromItem(DependentsGrid.SelectedItem) as System.Windows.Controls.DataGridRow;
-            row?.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            var row = DependentsGrid.ItemContainerGenerator.ContainerFromItem(DependentsGrid.SelectedItem) as ListViewItem;
+            row?.Focus();
             DependentsGrid.Focus();
         }
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.System && e.SystemKey == Key.R)
+        {
+            _viewModel.RequestRefresh();
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Up:
@@ -70,6 +78,14 @@ public partial class DependentsWindow : Window
                 break;
             case Key.Down:
                 _viewModel.MoveSelection(1);
+                e.Handled = true;
+                break;
+            case Key.Q when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift):
+                _viewModel.HandleCtrlShiftQ();
+                e.Handled = true;
+                break;
+            case Key.R when Keyboard.Modifiers == ModifierKeys.Alt:
+                _viewModel.RequestRefresh();
                 e.Handled = true;
                 break;
             case Key.Enter:

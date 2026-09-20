@@ -21,7 +21,26 @@ public sealed class ArixcelOptions
 
     public Audit.AutoColorPalette MapPalette { get; set; } = new();
 
+    public WindowPlacement ExplorerWindow { get; set; } = new();
+    public WindowPlacement DependentsWindow { get; set; } = new();
+
     public static ArixcelOptions Default { get; } = new();
+
+    public ArixcelOptions Clone() => OptionsStore.Clone(this);
+}
+
+public sealed class WindowPlacement
+{
+    public double Left { get; set; }
+    public double Top { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+
+    public bool HasPosition =>
+        Width > 0 &&
+        Height > 0 &&
+        !double.IsNaN(Left) &&
+        !double.IsNaN(Top);
 }
 
 public sealed class UtilityShortcutDefinition

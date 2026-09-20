@@ -130,6 +130,28 @@ public static class TraceUtils
         return new ParsedTraceAddress { WorksheetName = worksheetName, RangeAddress = rangeAddress };
     }
 
+    public static bool AddressesReferToSameRange(string? left, string? right)
+    {
+        if (left is null || right is null) return false;
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right)) return false;
+
+        var leftText = left.Trim();
+        var rightText = right.Trim();
+        if (string.Equals(leftText, rightText, StringComparison.OrdinalIgnoreCase)) return true;
+
+        var parsedLeft = ParseWorksheetScopedAddress(leftText);
+        var parsedRight = ParseWorksheetScopedAddress(rightText);
+        if (parsedLeft != null && parsedRight != null)
+        {
+            return string.Equals(parsedLeft.WorksheetName, parsedRight.WorksheetName, StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(parsedLeft.RangeAddress, parsedRight.RangeAddress, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var leftRange = parsedLeft?.RangeAddress ?? leftText;
+        var rightRange = parsedRight?.RangeAddress ?? rightText;
+        return string.Equals(leftRange, rightRange, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string QualifyAddress(string address, string contextAddress)
     {
         if (string.IsNullOrWhiteSpace(address)) return "";

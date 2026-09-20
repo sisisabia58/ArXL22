@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.UI.ViewModels;
@@ -77,6 +78,8 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public event System.Action<DependentRow>? NavigateRequested;
     public event System.Action<ExplorerCloseMode>? CloseRequested;
+    public event System.Action? DrillRequested;
+    public event System.Action? RefreshRequested;
 
     public void Load(IReadOnlyList<DependentEntry> entries, string originAddress, string originValue = "")
     {
@@ -130,6 +133,17 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     public void RequestKeepClose() => CloseRequested?.Invoke(ExplorerCloseMode.KeepSelection);
 
     public void RequestBackClose() => CloseRequested?.Invoke(ExplorerCloseMode.RestorePrevious);
+
+    public void RequestRefresh() => RefreshRequested?.Invoke();
+
+    public void HandleCtrlShiftQ()
+    {
+        if (!ExplorerKeyboard.ShouldDrillDependents(_selectedIndex)) return;
+        DrillRequested?.Invoke();
+    }
+
+    public DependentRow? SelectedRow =>
+        _selectedIndex >= 0 && _selectedIndex < Rows.Count ? Rows[_selectedIndex] : null;
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));

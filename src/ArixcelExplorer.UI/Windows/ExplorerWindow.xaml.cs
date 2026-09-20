@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.UI.ViewModels;
@@ -10,6 +12,7 @@ public partial class ExplorerWindow : Window
     private readonly ExplorerViewModel _viewModel;
     private readonly ExplorerCloseBehavior _closeBehavior;
     private bool _explicitClose;
+    private bool _syncingSelection;
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
 
@@ -27,10 +30,13 @@ public partial class ExplorerWindow : Window
         };
         _viewModel.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ExplorerViewModel.SelectedIndex) &&
-                TreeGrid.SelectedItem != null)
+            if (args.PropertyName == nameof(ExplorerViewModel.SelectedIndex))
             {
-                TreeGrid.ScrollIntoView(TreeGrid.SelectedItem);
+                SyncListSelection();
+                if (TreeGrid.SelectedItem != null)
+                {
+                    TreeGrid.ScrollIntoView(TreeGrid.SelectedItem);
+                }
             }
         };
     }
@@ -42,6 +48,7 @@ public partial class ExplorerWindow : Window
         var index = _viewModel.SelectedIndex >= 0 ? _viewModel.SelectedIndex : 0;
         TreeGrid.SelectedIndex = index;
         _viewModel.SelectRow(index);
+        SyncListSelection();
         if (TreeGrid.SelectedItem != null)
         {
             TreeGrid.ScrollIntoView(TreeGrid.SelectedItem);
@@ -54,14 +61,57 @@ public partial class ExplorerWindow : Window
         TreeGrid.Focus();
         if (TreeGrid.SelectedItem != null)
         {
-            var row = TreeGrid.ItemContainerGenerator.ContainerFromItem(TreeGrid.SelectedItem) as System.Windows.Controls.DataGridRow;
-            row?.MoveFocus(new TraversalRequest(FocusNavigationDirection.Next));
+            var row = TreeGrid.ItemContainerGenerator.ContainerFromItem(TreeGrid.SelectedItem) as ListViewItem;
+            row?.Focus();
             TreeGrid.Focus();
+        }
+    }
+
+    private void TreeGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSelection) return;
+        if (TreeGrid.SelectedIndex >= 0)
+        {
+            _viewModel.SelectRow(TreeGrid.SelectedIndex);
+        }
+    }
+
+    private void FormulaBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        var index = FormulaBox.GetCharacterIndexFromPoint(e.GetPosition(FormulaBox), true);
+        var additive = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
+        _viewModel.SelectFormulaToken(index, additive);
+        SyncListSelection();
+        RestoreKeyboardFocus();
+        e.Handled = true;
+    }
+
+    private void SyncListSelection()
+    {
+        _syncingSelection = true;
+        try
+        {
+            TreeGrid.SelectedItems.Clear();
+            foreach (var row in _viewModel.Rows.Where(item => item.IsSelected))
+            {
+                TreeGrid.SelectedItems.Add(row);
+            }
+        }
+        finally
+        {
+            _syncingSelection = false;
         }
     }
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.System && e.SystemKey == Key.R)
+        {
+            _viewModel.RequestRefresh();
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case Key.Up:
@@ -81,7 +131,11 @@ public partial class ExplorerWindow : Window
                 e.Handled = true;
                 break;
             case Key.Q when Keyboard.Modifiers == ModifierKeys.Control:
-                _viewModel.CycleExpandCollapse();
+                _viewModel.HandleCtrlQ();
+                e.Handled = true;
+                break;
+            case Key.R when Keyboard.Modifiers == ModifierKeys.Alt:
+                _viewModel.RequestRefresh();
                 e.Handled = true;
                 break;
             case Key.Enter:

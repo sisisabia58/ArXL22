@@ -12,7 +12,7 @@ public sealed class HighlightService
     private readonly Dictionary<string, int> _original = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<OverlayLayer>> _layers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _ownerCells = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _transient = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<string>> _transient = new(StringComparer.OrdinalIgnoreCase);
 
     public HighlightService(Excel.Application application)
     {
@@ -55,20 +55,40 @@ public sealed class HighlightService
 
     public void SetTransient(string ownerId, string? address, string hex, string originAddress)
     {
-        if (_transient.TryGetValue(ownerId, out var previous) &&
-            !AddressesEqual(previous, originAddress))
+        SetTransientMany(ownerId, address == null ? Array.Empty<string>() : new[] { address }, hex, originAddress);
+    }
+
+    public void SetTransientMany(string ownerId, IEnumerable<string> addresses, string hex, string originAddress)
+    {
+        if (_transient.TryGetValue(ownerId, out var previousList))
         {
-            ReleaseAddress(ownerId, previous);
+            foreach (var previous in previousList)
+            {
+                if (!AddressesEqual(previous, originAddress))
+                {
+                    ReleaseAddress(ownerId, previous);
+                }
+            }
+
             _transient.Remove(ownerId);
         }
 
-        if (string.IsNullOrWhiteSpace(address) || AddressesEqual(address, originAddress))
+        var applied = new List<string>();
+        foreach (var address in addresses)
         {
-            return;
+            if (string.IsNullOrWhiteSpace(address) || AddressesEqual(address, originAddress))
+            {
+                continue;
+            }
+
+            Apply(ownerId, address, hex);
+            applied.Add(address);
         }
 
-        Apply(ownerId, address, hex);
-        _transient[ownerId] = address!;
+        if (applied.Count > 0)
+        {
+            _transient[ownerId] = applied;
+        }
     }
 
     public void ReleaseOwner(string ownerId)

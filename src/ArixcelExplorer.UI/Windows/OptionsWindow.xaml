@@ -1,50 +1,59 @@
 <Window x:Class="ArixcelExplorer.UI.Windows.OptionsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:settings="clr-namespace:ArixcelExplorer.Core.Settings;assembly=ArixcelExplorer.Core"
         Title="EXLerate Options"
-        Height="520"
-        Width="420"
+        Height="{x:Static settings:ExplorerChrome.OptionsHeight}"
+        Width="{x:Static settings:ExplorerChrome.OptionsWidth}"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
-  <Grid Margin="16">
+  <Grid Margin="10">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
       <RowDefinition Height="Auto" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="Formula Explorer Options"
-               FontSize="15"
+    <TextBlock Text="Formula Explorer"
+               FontSize="13"
                FontWeight="SemiBold"
-               Margin="0,0,0,12" />
+               Margin="0,0,0,8" />
 
     <StackPanel Grid.Row="1">
-      <TextBlock Text="Close behavior" FontWeight="SemiBold" Margin="0,0,0,4" />
-      <ComboBox x:Name="CloseBehaviorCombo" Margin="0,0,0,12">
+      <TextBlock Text="Close behavior" Margin="0,0,0,3" />
+      <ComboBox x:Name="CloseBehaviorCombo" Margin="0,0,0,8" Height="22">
         <ComboBoxItem Content="Enter keeps selection, Esc navigates back" Tag="EnterKeepsSelection" />
         <ComboBoxItem Content="Esc closes and navigates back automatically" Tag="EscNavigatesBack" />
       </ComboBox>
 
-      <TextBlock Text="Origin highlight (hex)" FontWeight="SemiBold" Margin="0,0,0,4" />
-      <TextBox x:Name="OriginHighlightBox" Margin="0,0,0,12" />
-
-      <TextBlock Text="Precedent highlight (hex)" FontWeight="SemiBold" Margin="0,0,0,4" />
-      <TextBox x:Name="PrecedentHighlightBox" Margin="0,0,0,12" />
-
-      <TextBlock Text="Max trace depth" FontWeight="SemiBold" Margin="0,0,0,4" />
-      <TextBox x:Name="MaxDepthBox" Margin="0,0,0,12" />
-
-      <TextBlock Text="Dependents warning threshold" FontWeight="SemiBold" Margin="0,0,0,4" />
-      <TextBox x:Name="DependentsWarningBox" Margin="0,0,0,12" />
+      <Grid Margin="0,0,0,8">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" />
+          <ColumnDefinition Width="12" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Origin color" Margin="0,0,0,3" />
+        <TextBox x:Name="OriginHighlightBox" Grid.Row="1" Grid.Column="0" Height="22" Margin="0,0,0,8" />
+        <TextBlock Grid.Row="0" Grid.Column="2" Text="Precedent color" Margin="0,0,0,3" />
+        <TextBox x:Name="PrecedentHighlightBox" Grid.Row="1" Grid.Column="2" Height="22" Margin="0,0,0,8" />
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Dependent color" Margin="0,0,0,3" />
+        <TextBox x:Name="DependentHighlightBox" Grid.Row="3" Grid.Column="0" Height="22" />
+      </Grid>
 
       <CheckBox x:Name="ConfirmLargeScanBox"
-                Content="Confirm before scanning large dependent sets"
-                Margin="0,0,0,12" />
+                Content="Confirm large dependent scans"
+                Margin="0,4,0,0" />
     </StackPanel>
 
     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-      <Button Content="Save" Width="80" Margin="0,0,8,0" Click="Save_Click" IsDefault="True" />
-      <Button Content="Cancel" Width="80" Click="Cancel_Click" IsCancel="True" />
+      <Button Content="OK" Width="75" Height="23" Margin="0,0,8,0" Click="Save_Click" IsDefault="True" />
+      <Button Content="Cancel" Width="75" Height="23" Click="Cancel_Click" IsCancel="True" />
     </StackPanel>
   </Grid>
 </Window>

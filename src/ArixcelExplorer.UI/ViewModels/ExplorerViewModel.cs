@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using ArixcelExplorer.Core.Formulas;
+using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.UI.ViewModels;
@@ -111,6 +113,8 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
     public event System.Action<ExplorerTreeRow>? NavigateRequested;
     public event System.Action<ExplorerCloseMode>? CloseRequested;
+    public event System.Action? DrillRequested;
+    public event System.Action? RefreshRequested;
 
     public void LoadTree(FormulaAstNode root, string formulaText)
     {
@@ -236,6 +240,66 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         if (selectedId != null) SelectById(selectedId);
         else if (Rows.Count > 0) SelectRow(0);
         StatusText = _isFullyExpanded ? "Expanded all" : "Collapsed all";
+    }
+
+    public void HandleCtrlQ()
+    {
+        if (ExplorerKeyboard.ResolveCtrlQ(_selectedIndex) == ExplorerCtrlQAction.CycleExpand)
+        {
+            CycleExpandCollapse();
+            return;
+        }
+
+        DrillRequested?.Invoke();
+    }
+
+    public void RequestRefresh() => RefreshRequested?.Invoke();
+
+    public void SelectFormulaToken(int charIndex, bool additive)
+    {
+        var sheet = TraceUtils.ParseWorksheetScopedAddress(RootAddress)?.WorksheetName ?? "";
+        var hit = FormulaTokenHits.HitTest(FormulaText, sheet, charIndex);
+        if (hit == null || string.IsNullOrWhiteSpace(hit.Address)) return;
+
+        if (!additive)
+        {
+            foreach (var row in Rows) row.IsSelected = false;
+        }
+
+        var firstMatch = -1;
+        for (var i = 0; i < Rows.Count; i++)
+        {
+            if (!TraceUtils.AddressesReferToSameRange(hit.Address, Rows[i].Location)) continue;
+            Rows[i].IsSelected = true;
+            if (firstMatch < 0) firstMatch = i;
+        }
+
+        if (firstMatch < 0) return;
+        if (_selectedIndex != firstMatch)
+        {
+            _selectedIndex = firstMatch;
+            OnPropertyChanged(nameof(SelectedIndex));
+        }
+        else
+        {
+            OnPropertyChanged(nameof(SelectedIndex));
+        }
+
+        NavigateRequested?.Invoke(Rows[firstMatch]);
+    }
+
+    public IReadOnlyList<string> SelectedLocations()
+    {
+        var locations = new List<string>();
+        foreach (var row in Rows)
+        {
+            if (row.IsSelected && !string.IsNullOrWhiteSpace(row.Location))
+            {
+                locations.Add(row.Location);
+            }
+        }
+
+        return locations;
     }
 
     public void ExpandAll()

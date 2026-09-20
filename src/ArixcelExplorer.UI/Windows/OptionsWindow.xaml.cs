@@ -10,27 +10,16 @@ public partial class OptionsWindow : Window
     public OptionsWindow(ArixcelOptions options)
     {
         InitializeComponent();
-        Options = options;
-        MaxDepthBox.Text = options.TraceMaxDepth.ToString();
-        DependentsWarningBox.Text = options.MaxDependentsBeforeWarning.ToString();
-        ConfirmLargeScanBox.IsChecked = options.ConfirmLargeDependentScan;
-        CloseBehaviorCombo.SelectedIndex = options.CloseBehavior == ExplorerCloseBehavior.EnterKeepsSelection ? 0 : 1;
-        OriginHighlightBox.Text = options.OriginHighlight;
-        PrecedentHighlightBox.Text = options.PrecedentHighlight;
+        Options = options.Clone();
+        ConfirmLargeScanBox.IsChecked = Options.ConfirmLargeDependentScan;
+        CloseBehaviorCombo.SelectedIndex = Options.CloseBehavior == ExplorerCloseBehavior.EnterKeepsSelection ? 0 : 1;
+        OriginHighlightBox.Text = Options.OriginHighlight;
+        PrecedentHighlightBox.Text = Options.PrecedentHighlight;
+        DependentHighlightBox.Text = Options.DependentHighlight;
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (int.TryParse(MaxDepthBox.Text, out var depth))
-        {
-            Options.TraceMaxDepth = depth;
-        }
-
-        if (int.TryParse(DependentsWarningBox.Text, out var warning))
-        {
-            Options.MaxDependentsBeforeWarning = warning;
-        }
-
         Options.ConfirmLargeDependentScan = ConfirmLargeScanBox.IsChecked == true;
         Options.CloseBehavior = CloseBehaviorCombo.SelectedIndex == 0
             ? ExplorerCloseBehavior.EnterKeepsSelection
@@ -44,6 +33,11 @@ public partial class OptionsWindow : Window
         if (ExcelOleColor.IsValidHex(PrecedentHighlightBox.Text))
         {
             Options.PrecedentHighlight = NormalizeHex(PrecedentHighlightBox.Text);
+        }
+
+        if (ExcelOleColor.IsValidHex(DependentHighlightBox.Text))
+        {
+            Options.DependentHighlight = NormalizeHex(DependentHighlightBox.Text);
         }
 
         DialogResult = true;

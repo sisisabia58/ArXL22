@@ -17,28 +17,31 @@ New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 function Register-XlamAddIn {
     param([string]$XlamPath)
     $key = 'HKCU:\Software\Microsoft\Office\16.0\Excel\Options'
-    $openValue = 'OPEN'
-    if (Test-Path $key) {
-        $existing = Get-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
-        $current = [string]$existing.$openValue
-        if ($current -like '*ArixcelShortcuts.xlam*') {
-            $parts = $current -split [char]0 | Where-Object { $_ -and $_ -notlike '*ArixcelShortcuts.xlam*' }
-            if ($parts.Count -gt 0) {
-                Set-ItemProperty -Path $key -Name $openValue -Value ($parts -join [char]0)
-            } else {
-                Remove-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
-            }
-            $existing = Get-ItemProperty -Path $key -Name $openValue -ErrorAction SilentlyContinue
-        }
-        $entry = """$XlamPath"""
-        if ($existing.$openValue) {
-            if ($existing.$openValue -notlike "*$XlamPath*") {
-                Set-ItemProperty -Path $key -Name $openValue -Value ($existing.$openValue + [char]0 + $entry)
-            }
-        } else {
-            Set-ItemProperty -Path $key -Name $openValue -Value $entry
-        }
+    if (-not (Test-Path $key)) {
+        Write-Host "Excel Options key missing; skip auto-open registration." -ForegroundColor Yellow
+        return
     }
+
+    $props = Get-ItemProperty -Path $key
+    $keep = New-Object System.Collections.Generic.List[string]
+    foreach ($name in @($props.PSObject.Properties.Name | Where-Object { $_ -match '^OPEN\d*$' } | Sort-Object { if ($_ -eq 'OPEN') { 0 } else { [int]($_ -replace '\D','') } })) {
+        $raw = [string]$props.$name
+        foreach ($part in ($raw -split [char]0)) {
+            if ([string]::IsNullOrWhiteSpace($part)) { continue }
+            if ($part -like '*ArixcelExplorer.xlam*') { continue }
+            if ($part -like '*ArixcelShortcuts.xlam*') { continue }
+            if ($part -like '*EXLerateShortcuts.xlam*') { continue }
+            $keep.Add($part)
+        }
+        Remove-ItemProperty -Path $key -Name $name -ErrorAction SilentlyContinue
+    }
+
+    $keep.Add("`"$XlamPath`"")
+    for ($i = 0; $i -lt $keep.Count; $i++) {
+        $name = if ($i -eq 0) { 'OPEN' } else { "OPEN$i" }
+        Set-ItemProperty -Path $key -Name $name -Value $keep[$i]
+    }
+
     Write-Host "Registered Excel add-in auto-open: $XlamPath" -ForegroundColor Green
 }
 

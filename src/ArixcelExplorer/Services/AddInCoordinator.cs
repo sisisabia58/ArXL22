@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Forms.Integration;
 using ArixcelExplorer.Core.Settings;
@@ -20,7 +22,7 @@ public static class AddInCoordinator
     private static UtilityShortcutService? _utilityService;
     private static HighlightService? _highlightService;
     private static readonly ExplorerSession Session = new();
-    private static ArixcelOptions _options = ArixcelOptions.Default;
+    private static ArixcelOptions _options = new();
     private static bool _sessionWired;
 
     public static void Initialize(Excel.Application application)
@@ -32,6 +34,7 @@ public static class AddInCoordinator
         _compareService = new ExcelCompareService(application);
         _utilityService = new UtilityShortcutService(application);
         _highlightService = new HighlightService(application);
+        _options = OptionsStore.Load();
         EnsureWpfApp();
         EnsureSessionWired();
     }
@@ -65,9 +68,9 @@ public static class AddInCoordinator
         }
     }
 
-    private static void OpenDependentsCore()
+    private static void OpenDependentsCore(IReadOnlyList<TraceCellInfo>? roots = null)
     {
-        var selected = _traceService!.GetSelectedCells();
+        var selected = roots ?? _traceService!.GetSelectedCells();
         if (selected.Count == 0) return;
 
         if (_options.ConfirmLargeDependentScan && selected.Count > 1)
@@ -80,7 +83,7 @@ public static class AddInCoordinator
             if (confirm != MessageBoxResult.Yes) return;
         }
 
-        var trace = _traceService.Trace(
+        var trace = _traceService!.Trace(
             selected,
             TraceDirection.Dependents,
             1,
@@ -121,14 +124,55 @@ public static class AddInCoordinator
                 window.RestoreKeyboardFocus();
             }), System.Windows.Threading.DispatcherPriority.Input);
         };
-        var originValue = selected.Count == 1
+        vm.DrillRequested += () =>
+        {
+            var row = vm.SelectedRow;
+            if (row == null || string.IsNullOrWhiteSpace(row.Address) || row.IsOrigin) return;
+            try
+            {
+                var cell = CellFromAddress(row.Address);
+                if (cell != null)
+                {
+                    OpenDependentsCore(new[] { cell });
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowCallError("OpenDependents", ex);
+            }
+        };
+        vm.RefreshRequested += () =>
+        {
+            try
+            {
+                var cell = CellFromAddress(origin.OriginAddress);
+                if (cell == null) return;
+                var refreshed = _traceService.Trace(
+                    new[] { cell },
+                    TraceDirection.Dependents,
+                    1,
+                    _options.TraceSafetyLimit);
+                var refreshedEntries = DependentsAggregator.Aggregate(refreshed.Rows, TraceDirection.Dependents);
+                var originValue = TraceUtils.FormatTraceValue(cell.Value);
+                vm.Load(refreshedEntries, origin.OriginAddress, originValue);
+                _highlightService!.ReleaseOwner(ownerId);
+                _highlightService.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+                _highlightService.ApplyMany(ownerId, refreshedEntries.Select(entry => entry.Address), _options.DependentHighlight);
+            }
+            catch
+            {
+                // Refresh is best-effort.
+            }
+        };
+        var originValueText = selected.Count == 1
             ? TraceUtils.FormatTraceValue(selected[0].Value)
             : "";
-        vm.Load(entries, origin.OriginAddress, originValue);
+        vm.Load(entries, origin.OriginAddress, originValueText);
 
         window = new DependentsWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
-        ShowModeless(window);
+        ShowModeless(window, _options.DependentsWindow, ExplorerChrome.DependentsWidth, ExplorerChrome.DependentsHeight);
+        window.Closed += (_, _) => PersistWindowBounds(window, dependents: true);
         try
         {
             _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
@@ -172,7 +216,10 @@ public static class AddInCoordinator
         var window = new OptionsWindow(_options);
         if (window.ShowDialog() == true)
         {
+            window.Options.ExplorerWindow = _options.ExplorerWindow;
+            window.Options.DependentsWindow = _options.DependentsWindow;
             _options = window.Options;
+            PersistOptions();
         }
     }
 
@@ -182,6 +229,7 @@ public static class AddInCoordinator
     {
         Session.CloseAll();
         _highlightService?.RestoreAll();
+        PersistOptions();
     }
 
     public static void ReturnToOrigin()
@@ -211,8 +259,7 @@ public static class AddInCoordinator
 
         var vm = new ExplorerViewModel
         {
-            RootAddress = origin.OriginAddress,
-            StatusText = "Explorer ready"
+            RootAddress = origin.OriginAddress
         };
         ExplorerWindow? window = null;
         vm.NavigateRequested += row =>
@@ -221,7 +268,11 @@ public static class AddInCoordinator
             {
                 if (string.IsNullOrWhiteSpace(row.Location)) return;
                 _traceService!.NavigateToAddress(row.Location, stealFocus: false);
-                _highlightService!.SetTransient(ownerId, row.Location, _options.PrecedentHighlight, origin.OriginAddress);
+                _highlightService!.SetTransientMany(
+                    ownerId,
+                    vm.SelectedLocations(),
+                    _options.PrecedentHighlight,
+                    origin.OriginAddress);
             }
             catch
             {
@@ -234,11 +285,39 @@ public static class AddInCoordinator
                 window.RestoreKeyboardFocus();
             }), System.Windows.Threading.DispatcherPriority.Input);
         };
+        vm.DrillRequested += () =>
+        {
+            try
+            {
+                ShowExplorerForActiveCell(CaptureActiveOrigin());
+            }
+            catch (Exception ex)
+            {
+                ShowCallError("OpenExplorer", ex);
+            }
+        };
+        vm.RefreshRequested += () =>
+        {
+            try
+            {
+                var range = RangeFromAddress(origin.OriginAddress);
+                if (range == null) return;
+                var refreshedFormula = range.HasFormula ? range.Formula?.ToString() ?? "" : "";
+                vm.RootAddress = origin.OriginAddress;
+                vm.LoadTree(_formulaService.BuildExplorerTree(range), refreshedFormula);
+                _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+            }
+            catch
+            {
+                // Refresh is best-effort.
+            }
+        };
         vm.LoadTree(tree, formula);
 
         window = new ExplorerWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
-        ShowModeless(window);
+        ShowModeless(window, _options.ExplorerWindow, ExplorerChrome.ExplorerWidth, ExplorerChrome.ExplorerHeight);
+        window.Closed += (_, _) => PersistWindowBounds(window, dependents: false);
         try
         {
             _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
@@ -284,12 +363,11 @@ public static class AddInCoordinator
         ColumnIndex = cell.ColumnIndex
     };
 
-    private static void ShowModeless(Window window)
+    private static void ShowModeless(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
     {
         EnsureWpfApp();
         window.ShowInTaskbar = true;
-        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        window.Topmost = true;
+        ApplyPlacement(window, placement, defaultWidth, defaultHeight);
         try
         {
             ElementHost.EnableModelessKeyboardInterop(window);
@@ -299,6 +377,7 @@ public static class AddInCoordinator
             // keyboard interop is best-effort on hosts without WinForms
         }
 
+        window.Topmost = true;
         window.Show();
         window.WindowState = WindowState.Normal;
         window.Activate();
@@ -310,6 +389,131 @@ public static class AddInCoordinator
             window.Activate();
             window.Focus();
         }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+    }
+
+    private static void ApplyPlacement(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
+    {
+        window.Width = placement.Width > 0 ? placement.Width : defaultWidth;
+        window.Height = placement.Height > 0 ? placement.Height : defaultHeight;
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+
+        if (placement.HasPosition && IsOnScreen(placement))
+        {
+            window.Left = placement.Left;
+            window.Top = placement.Top;
+            return;
+        }
+
+        if (!TryOffsetFromExcel(window))
+        {
+            window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        }
+    }
+
+    private static bool IsOnScreen(WindowPlacement placement)
+    {
+        var left = SystemParameters.VirtualScreenLeft;
+        var top = SystemParameters.VirtualScreenTop;
+        var right = left + SystemParameters.VirtualScreenWidth;
+        var bottom = top + SystemParameters.VirtualScreenHeight;
+        var centerX = placement.Left + placement.Width / 2;
+        var centerY = placement.Top + placement.Height / 2;
+        return centerX >= left && centerX <= right && centerY >= top && centerY <= bottom;
+    }
+
+    private static bool TryOffsetFromExcel(Window window)
+    {
+        try
+        {
+            if (_app == null) return false;
+            var hwnd = new IntPtr(_app.Hwnd);
+            if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var rect)) return false;
+
+            var dpi = 96u;
+            try
+            {
+                dpi = GetDpiForWindow(hwnd);
+            }
+            catch
+            {
+                dpi = 96;
+            }
+
+            if (dpi == 0) dpi = 96;
+            var scale = 96.0 / dpi;
+            window.Left = rect.Left * scale + ExplorerChrome.ExcelOffsetX;
+            window.Top = rect.Top * scale + ExplorerChrome.ExcelOffsetY;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void PersistWindowBounds(Window window, bool dependents)
+    {
+        var placement = new WindowPlacement
+        {
+            Left = window.Left,
+            Top = window.Top,
+            Width = window.ActualWidth > 0 ? window.ActualWidth : window.Width,
+            Height = window.ActualHeight > 0 ? window.ActualHeight : window.Height
+        };
+
+        if (dependents)
+        {
+            _options.DependentsWindow = placement;
+        }
+        else
+        {
+            _options.ExplorerWindow = placement;
+        }
+
+        PersistOptions();
+    }
+
+    private static void PersistOptions()
+    {
+        try
+        {
+            OptionsStore.Save(_options);
+        }
+        catch
+        {
+            // Persistence must never block Explorer.
+        }
+    }
+
+    private static Excel.Range? RangeFromAddress(string address)
+    {
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
+        if (parsed == null || _app == null) return null;
+        foreach (Excel.Worksheet ws in _app.Worksheets)
+        {
+            if (string.Equals(ws.Name, parsed.WorksheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                return ws.Range[parsed.RangeAddress];
+            }
+        }
+
+        return null;
+    }
+
+    private static TraceCellInfo? CellFromAddress(string address)
+    {
+        var range = RangeFromAddress(address);
+        if (range == null) return null;
+        var ws = range.Worksheet as Excel.Worksheet;
+        return new TraceCellInfo
+        {
+            WorksheetName = ws?.Name ?? "",
+            RowIndex = range.Row - 1,
+            ColumnIndex = range.Column - 1,
+            Address = $"'{ws?.Name}'!{range.Address[false, false]}",
+            Value = range.Value2,
+            Formula = range.HasFormula ? range.Formula : null
+        };
     }
 
     private static void ShowCallError(string operation, Exception ex)
@@ -351,5 +555,20 @@ public static class AddInCoordinator
         }
 
         EnsureSessionWired();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
     }
 }

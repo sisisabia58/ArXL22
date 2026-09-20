@@ -3,16 +3,67 @@
   <SolidColorBrush x:Key="ArixcelAccentBrush" Color="#0563C1" />
   <SolidColorBrush x:Key="ArixcelSelectionBrush" Color="#0078D7" />
   <SolidColorBrush x:Key="ArixcelActiveBranchBrush" Color="#FFE49A" />
-  <SolidColorBrush x:Key="ArixcelBorderBrush" Color="#CFD7DF" />
-  <SolidColorBrush x:Key="ArixcelPanelBrush" Color="#F8FBFF" />
+  <SolidColorBrush x:Key="ArixcelBorderBrush" Color="#808080" />
+  <SolidColorBrush x:Key="ArixcelPanelBrush" Color="#FFFFFF" />
   <SolidColorBrush x:Key="ArixcelHighlightBrush" Color="#0078D7" />
   <SolidColorBrush x:Key="ArixcelHighlightTextBrush" Color="#FFFFFF" />
   <SolidColorBrush x:Key="ArixcelWindowBrush" Color="#F0F0F0" />
+  <SolidColorBrush x:Key="ArixcelHeaderBrush" Color="#F0F0F0" />
 
   <Style TargetType="Window">
     <Setter Property="FontFamily" Value="Segoe UI" />
-    <Setter Property="FontSize" Value="12" />
+    <Setter Property="FontSize" Value="11" />
     <Setter Property="Background" Value="{StaticResource ArixcelWindowBrush}" />
+  </Style>
+
+  <Style x:Key="ArixcelListViewStyle" TargetType="ListView">
+    <Setter Property="Background" Value="White" />
+    <Setter Property="BorderBrush" Value="{StaticResource ArixcelBorderBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="FontFamily" Value="Segoe UI" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+    <Setter Property="VirtualizingStackPanel.IsVirtualizing" Value="True" />
+  </Style>
+
+  <Style TargetType="GridViewColumnHeader">
+    <Setter Property="Height" Value="22" />
+    <Setter Property="Padding" Value="4,0" />
+    <Setter Property="FontFamily" Value="Segoe UI" />
+    <Setter Property="FontSize" Value="11" />
+    <Setter Property="FontWeight" Value="Normal" />
+    <Setter Property="HorizontalContentAlignment" Value="Left" />
+    <Setter Property="Background" Value="{StaticResource ArixcelHeaderBrush}" />
+  </Style>
+
+  <Style x:Key="ArixcelListRowStyle" TargetType="ListViewItem">
+    <Setter Property="Height" Value="18" />
+    <Setter Property="MinHeight" Value="18" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="SnapsToDevicePixels" Value="True" />
+    <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Foreground" Value="#1A1A1A" />
+    <Style.Resources>
+      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#0078D7" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#0078D7" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#FFFFFF" />
+    </Style.Resources>
+    <Style.Triggers>
+      <DataTrigger Binding="{Binding IsActiveBranch}" Value="True">
+        <Setter Property="FontWeight" Value="Bold" />
+      </DataTrigger>
+      <Trigger Property="IsSelected" Value="True">
+        <Setter Property="Background" Value="{StaticResource ArixcelSelectionBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource ArixcelHighlightTextBrush}" />
+      </Trigger>
+    </Style.Triggers>
   </Style>
 
   <Style x:Key="ArixcelExplorerRowStyle" TargetType="DataGridRow">
