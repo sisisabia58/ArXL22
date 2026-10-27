@@ -11,6 +11,7 @@
         ShowInTaskbar="True"
         Topmost="False"
         PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewTextInput="Window_PreviewTextInput"
         Closing="Window_Closing"
         Loaded="Window_Loaded">
   <Window.Resources>
@@ -44,35 +45,137 @@
             <GridViewColumn.CellTemplate>
               <DataTemplate>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                  <Border Width="{Binding IndentWidth}" />
-                  <Border Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
-                          Height="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
-                          Margin="0,0,4,0"
-                          BorderBrush="#808080"
-                          BorderThickness="1"
-                          Background="#F8F8F8"
-                          Cursor="Hand"
-                          PreviewMouseLeftButtonDown="TreeGlyph_PreviewMouseLeftButtonDown">
-                    <Border.Style>
-                      <Style TargetType="Border">
-                        <Setter Property="Visibility" Value="Hidden" />
-                        <Style.Triggers>
-                          <DataTrigger Binding="{Binding HasChildren}" Value="True">
-                            <Setter Property="Visibility" Value="Visible" />
-                          </DataTrigger>
-                        </Style.Triggers>
-                      </Style>
-                    </Border.Style>
-                    <TextBlock Text="{Binding Glyph}"
-                               FontFamily="Segoe UI"
-                               FontSize="10"
-                               FontWeight="Bold"
-                               HorizontalAlignment="Center"
-                               VerticalAlignment="Center" />
-                  </Border>
+                  <ItemsControl ItemsSource="{Binding Guides}"
+                                Focusable="False"
+                                IsHitTestVisible="False"
+                                BorderThickness="0"
+                                Padding="0">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Width="{x:Static settings:ExplorerTreeChrome.IndentPerLevel}"
+                              Height="{x:Static settings:ExplorerChrome.RowHeight}"
+                              IsHitTestVisible="False">
+                          <Line X1="6" Y1="0" X2="6" Y2="20"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding FullVertical}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="0" X2="6" Y2="10"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding Elbow}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="10" X2="6" Y2="20"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding ElbowContinues}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="10" X2="12" Y2="10"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding Elbow}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Grid Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                        Height="{x:Static settings:ExplorerChrome.RowHeight}"
+                        Margin="0,0,4,0">
+                    <Line X1="6" Y1="13" X2="6" Y2="20"
+                          Stroke="{StaticResource ArixcelTreeLineBrush}"
+                          StrokeThickness="1"
+                          StrokeDashArray="1 1.2"
+                          IsHitTestVisible="False"
+                          SnapsToDevicePixels="True">
+                      <Line.Style>
+                        <Style TargetType="Line">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowDropLine}" Value="True">
+                              <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Line.Style>
+                    </Line>
+                    <Border Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                            Height="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                            VerticalAlignment="Center"
+                            BorderBrush="#808080"
+                            BorderThickness="1"
+                            Background="#F8F8F8"
+                            Cursor="Hand"
+                            PreviewMouseLeftButtonDown="TreeGlyph_PreviewMouseLeftButtonDown">
+                      <Border.Style>
+                        <Style TargetType="Border">
+                          <Setter Property="Visibility" Value="Hidden" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                              <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Border.Style>
+                      <TextBlock Text="{Binding Glyph}"
+                                 FontFamily="Segoe UI"
+                                 FontSize="10"
+                                 FontWeight="Bold"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Border>
+                  </Grid>
                   <TextBlock Text="{Binding Component}"
                              FontFamily="Segoe UI"
-                             FontSize="11"
                              VerticalAlignment="Center" />
                 </StackPanel>
               </DataTemplate>
@@ -90,31 +193,67 @@
 
     <Border Grid.Row="1"
             Margin="0,4,0,0"
-            Padding="3,1"
+            Padding="4,2"
             BorderBrush="{StaticResource ArixcelBorderBrush}"
             BorderThickness="1"
             Background="White"
             Height="{x:Static settings:ExplorerChrome.FormulaPaneHeight}">
-      <RichTextBox x:Name="FormulaBox"
-                   IsReadOnly="True"
-                   IsDocumentEnabled="True"
-                   AcceptsReturn="False"
-                   FontFamily="Segoe UI"
-                   FontSize="11"
-                   BorderThickness="0"
-                   Background="Transparent"
-                   Padding="0"
-                   VerticalScrollBarVisibility="Disabled"
-                   HorizontalScrollBarVisibility="Disabled"
-                   PreviewMouseLeftButtonDown="FormulaBox_PreviewMouseLeftButtonDown" />
+      <Grid>
+        <RichTextBox x:Name="FormulaBox"
+                     IsReadOnly="True"
+                     IsDocumentEnabled="True"
+                     AcceptsReturn="False"
+                     FontFamily="Segoe UI"
+                     FontSize="{x:Static settings:ExplorerChrome.FontSize}"
+                     BorderThickness="0"
+                     Background="Transparent"
+                     Padding="0"
+                     VerticalScrollBarVisibility="Disabled"
+                     HorizontalScrollBarVisibility="Auto"
+                     PreviewMouseLeftButtonDown="FormulaBox_PreviewMouseLeftButtonDown" />
+        <TextBox x:Name="FormulaEditor"
+                 Visibility="Collapsed"
+                 FontFamily="Segoe UI"
+                 FontSize="{x:Static settings:ExplorerChrome.FontSize}"
+                 BorderThickness="0"
+                 Background="Transparent"
+                 Padding="0"
+                 VerticalContentAlignment="Center"
+                 AcceptsReturn="False"
+                 PreviewKeyDown="FormulaEditor_PreviewKeyDown" />
+      </Grid>
     </Border>
 
-    <Button Grid.Row="2"
-            Content="OK"
-            HorizontalAlignment="Right"
-            Margin="0,6,0,0"
-            Width="{x:Static settings:ExplorerChrome.OkButtonWidth}"
-            Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
-            Click="Ok_Click" />
+    <StackPanel Grid.Row="2"
+                Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Margin="0,6,0,0">
+      <Button x:Name="MoreButton"
+              Content="More ▾"
+              Width="{x:Static settings:ExplorerChrome.MoreButtonWidth}"
+              Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
+              Margin="0,0,6,0"
+              Click="More_Click">
+        <Button.ContextMenu>
+          <ContextMenu x:Name="MoreMenu" Placement="Bottom">
+            <MenuItem Header="Edit Formula" InputGestureText="F2" Click="EditFormula_Click" />
+            <MenuItem Header="Explore Precedents" InputGestureText="Ctrl+W" Click="ExplorePrecedents_Click" />
+            <MenuItem Header="Explore Dependents" InputGestureText="Ctrl+Shift+Q" Click="ExploreDependents_Click" />
+            <MenuItem Header="Go to Excel and Back" InputGestureText="Ctrl+Back" Click="GoToExcel_Click" />
+            <Separator />
+            <MenuItem Header="Refresh" InputGestureText="Alt+R" Click="Refresh_Click" />
+            <MenuItem Header="Reselect" InputGestureText="Alt+S" Click="Reselect_Click" />
+            <MenuItem Header="Expand/Collapse All" InputGestureText="Alt+Z" Click="ExpandCollapse_Click" />
+            <MenuItem Header="Explore Current Location" InputGestureText="Ctrl+L" Click="ExploreCurrentLocation_Click" />
+            <Separator />
+            <MenuItem Header="Reset Columns" Click="ResetColumns_Click" />
+          </ContextMenu>
+        </Button.ContextMenu>
+      </Button>
+      <Button Content="OK"
+              Width="{x:Static settings:ExplorerChrome.OkButtonWidth}"
+              Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
+              Click="Ok_Click" />
+    </StackPanel>
   </Grid>
 </Window>

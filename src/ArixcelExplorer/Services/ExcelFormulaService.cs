@@ -21,7 +21,7 @@ public sealed class ExcelFormulaEvaluationContext : IFormulaEvaluationContext
             var sheet = FindWorksheet(contextWorksheet);
             if (sheet == null) return null;
             var result = _app.Evaluate(subFormula);
-            return result?.ToString();
+            return TraceUtils.FormatTraceValue(result);
         }
         catch
         {

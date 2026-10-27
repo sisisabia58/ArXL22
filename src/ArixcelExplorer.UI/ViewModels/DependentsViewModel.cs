@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using ArixcelExplorer.Core.Formulas;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
 
@@ -80,6 +81,7 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     public event System.Action<ExplorerCloseMode>? CloseRequested;
     public event System.Action? DrillRequested;
     public event System.Action? RefreshRequested;
+    public event System.Action? GoToExcelRequested;
 
     public void Load(IReadOnlyList<DependentEntry> entries, string originAddress, string originValue = "")
     {
@@ -99,7 +101,7 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
         }
 
         var dependentCount = System.Math.Max(0, Rows.Count - 1);
-        StatusText = $"{dependentCount} dependent(s)";
+        StatusText = ExplorerLocations.DependentsStatus(dependentCount);
         if (Rows.Count > 0) SelectRow(0, navigate: false);
     }
 
@@ -135,6 +137,10 @@ public sealed class DependentsViewModel : INotifyPropertyChanged
     public void RequestBackClose() => CloseRequested?.Invoke(ExplorerCloseMode.RestorePrevious);
 
     public void RequestRefresh() => RefreshRequested?.Invoke();
+
+    public void RequestGoToExcel() => GoToExcelRequested?.Invoke();
+
+    public void SelectOrigin() => SelectRow(0);
 
     public void HandleCtrlShiftQ()
     {

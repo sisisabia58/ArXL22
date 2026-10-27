@@ -9,12 +9,14 @@ namespace ArixcelExplorer.Core.Tests.Settings;
 public sealed class ExplorerParityTests
 {
     [Fact]
-    public void ExplorerChrome_uses_compact_original_sizes()
+    public void ExplorerChrome_matches_arixcel_window_proportions()
     {
-        Assert.True(ExplorerChrome.ExplorerWidth < 480);
-        Assert.True(ExplorerChrome.ExplorerHeight < 400);
-        Assert.True(ExplorerChrome.FormulaPaneHeight <= 28);
-        Assert.Equal(18, ExplorerChrome.RowHeight);
+        Assert.Equal(560, ExplorerChrome.ExplorerWidth);
+        Assert.Equal(420, ExplorerChrome.ExplorerHeight);
+        Assert.Equal(12, ExplorerChrome.FontSize);
+        Assert.True(ExplorerChrome.FormulaPaneHeight >= 32);
+        Assert.Equal(20, ExplorerChrome.RowHeight);
+        Assert.True(ExplorerChrome.ElementWidth >= 180);
     }
 
     [Theory]

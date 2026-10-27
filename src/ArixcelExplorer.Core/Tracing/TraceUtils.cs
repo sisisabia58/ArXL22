@@ -52,11 +52,14 @@ public static class TraceUtils
     public static string FormatTraceValue(object? value)
     {
         if (value == null || value is DBNull) return "";
-        if (value is string s) return s;
         if (value is bool b) return b ? "TRUE" : "FALSE";
-        if (value is double or float or decimal or int or long or short or byte)
+        if (value is string s) return NormalizeNumericText(s);
+        if (value is double d) return FormatGeneralNumber(d);
+        if (value is float f) return FormatGeneralNumber(f);
+        if (value is decimal m) return FormatGeneralNumber(m);
+        if (value is int or long or short or byte)
         {
-            return Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? "";
+            return Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
         }
 
         if (value is Array array)
@@ -69,7 +72,91 @@ public static class TraceUtils
 
         var raw = value.ToString() ?? "";
         if (raw.Contains("System.Object")) return "";
-        return raw;
+        return NormalizeNumericText(raw);
+    }
+
+    /// <summary>
+    /// Arixcel shows general-format numbers (6, 2, 4), not locale fixed decimals (6,00).
+    /// </summary>
+    public static string FormatGeneralNumber(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) return "";
+        var rounded = Math.Round(value, 12, MidpointRounding.AwayFromZero);
+        if (Math.Abs(rounded - Math.Round(rounded, MidpointRounding.AwayFromZero)) < 1e-9)
+        {
+            return Math.Round(rounded, MidpointRounding.AwayFromZero)
+                .ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return rounded.ToString("0.############", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    public static string FormatGeneralNumber(decimal value)
+    {
+        if (value == decimal.Truncate(value))
+        {
+            return decimal.Truncate(value).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        return value.ToString("0.#############################", System.Globalization.CultureInfo.CurrentCulture);
+    }
+
+    public static string NormalizeNumericText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? "";
+        var trimmed = text.Trim();
+        var match = Regex.Match(trimmed, @"^(-?\d+)([.,])(\d+)$");
+        if (!match.Success) return text;
+        var fraction = match.Groups[3].Value.TrimEnd('0');
+        if (fraction.Length == 0) return match.Groups[1].Value;
+        return match.Groups[1].Value + match.Groups[2].Value + fraction;
+    }
+
+    /// <summary>
+    /// Smallest single range covering every address. D4 and E4 on one sheet become 'Sheet'!D4:E4.
+    /// </summary>
+    public static string BoundingAddress(System.Collections.Generic.IEnumerable<string?> addresses)
+    {
+        string? sheet = null;
+        var minRow = int.MaxValue;
+        var minCol = int.MaxValue;
+        var maxRow = -1;
+        var maxCol = -1;
+        var any = false;
+        foreach (var address in addresses)
+        {
+            if (string.IsNullOrWhiteSpace(address)) continue;
+            var parsed = ParseWorksheetScopedAddress(address!);
+            var range = parsed?.RangeAddress ?? address!.Trim();
+            if (!IsRangeAddress(range)) continue;
+            var worksheet = parsed?.WorksheetName;
+            if (sheet == null)
+            {
+                sheet = worksheet;
+            }
+            else if (!string.Equals(sheet, worksheet, StringComparison.OrdinalIgnoreCase))
+            {
+                return "";
+            }
+
+            foreach (var part in range.Split(':'))
+            {
+                var cell = ParseCellAddress(part);
+                if (cell == null) continue;
+                any = true;
+                minRow = Math.Min(minRow, cell.Value.Row);
+                maxRow = Math.Max(maxRow, cell.Value.Row);
+                minCol = Math.Min(minCol, cell.Value.Col);
+                maxCol = Math.Max(maxCol, cell.Value.Col);
+            }
+        }
+
+        if (!any) return "";
+        var start = ColumnLetters(minCol) + (minRow + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var end = ColumnLetters(maxCol) + (maxRow + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var a1 = start == end ? start : start + ":" + end;
+        if (string.IsNullOrEmpty(sheet)) return a1;
+        return $"'{sheet}'!{a1}";
     }
 
     private static System.Collections.Generic.List<string> Flatten(Array array)
