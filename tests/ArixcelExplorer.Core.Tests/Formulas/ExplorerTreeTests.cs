@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using ArixcelExplorer.Core.Formulas;
 using ArixcelExplorer.Core.Settings;
@@ -106,17 +107,18 @@ public sealed class ExplorerTreeTests
             { 30d, 40d }
         };
 
-        Assert.Equal("4 values", TraceUtils.FormatTraceValue(block));
+        Assert.Equal(TraceUtils.ArrayValue, TraceUtils.FormatTraceValue(block));
         Assert.Equal("15", TraceUtils.FormatTraceValue(15d));
         Assert.Equal("", TraceUtils.FormatTraceValue(null));
         Assert.Equal("hello", TraceUtils.FormatTraceValue("hello"));
+        Assert.Equal("15", TraceUtils.FormatTraceValue(new object[] { 15d }));
     }
 
     [Fact]
-    public void FormatTraceValue_formats_one_by_n_array_as_joined_preview()
+    public void FormatTraceValue_renders_multi_cell_arrays_as_array_token()
     {
         object[] row = { 1d, 2d, 3d };
-        Assert.Equal("1, 2, 3", TraceUtils.FormatTraceValue(row));
+        Assert.Equal(TraceUtils.ArrayValue, TraceUtils.FormatTraceValue(row));
     }
 
     [Fact]
@@ -134,6 +136,11 @@ public sealed class ExplorerTreeTests
         Assert.Equal("sum_range", FunctionArgInfo.LabelFor("SUMIFS", 0));
         Assert.Equal("criteria_range1", FunctionArgInfo.LabelFor("SUMIFS", 1));
         Assert.Equal("criteria1", FunctionArgInfo.LabelFor("SUMIFS", 2));
+        Assert.Equal("criteria_range2", FunctionArgInfo.LabelFor("SUMIFS", 3));
+        Assert.Equal("criteria2", FunctionArgInfo.LabelFor("SUMIFS", 4));
+        Assert.Equal("criteria_range1", FunctionArgInfo.LabelFor("COUNTIFS", 0));
+        Assert.Equal("criteria1", FunctionArgInfo.LabelFor("COUNTIFS", 1));
+        Assert.Equal("average_range", FunctionArgInfo.LabelFor("AVERAGEIFS", 0));
         Assert.Equal("", FunctionArgInfo.LabelFor("SUM", 0));
     }
 
@@ -331,6 +338,125 @@ public sealed class ExplorerTreeTests
         var row = FormulaAstParser.FlattenVisible(tree).Single(node => node.Info == "validation");
         Assert.Equal("$A$1:$A$10", row.Label);
         Assert.Equal("'S'!$A$1:$A$10", row.Location);
+    }
+
+    [Fact]
+    public void Sumifs_nests_criteria_pair_under_filter_and_drops_error_junk()
+    {
+        const string formula = "=SUMIFS('Investment Cashflows'!$C$83:$AF$83,'Investment Cashflows'!$C$43:$AF$43,G$10)";
+        const string origin = "'Summary'!G34";
+        var tree = FormulaAstParser.Parse(formula, origin, "150318282, -2146826273");
+        var sumifs = Assert.Single(tree.Children);
+        Assert.Equal("SUMIFS", sumifs.Label);
+        Assert.Equal(2, sumifs.Children.Count);
+        Assert.Equal("sum_range", sumifs.Children[0].Info);
+        Assert.Equal("'Investment Cashflows'!$C$83:$AF$83", sumifs.Children[0].Label);
+
+        var filter = sumifs.Children[1];
+        Assert.Equal("Filter", filter.Label);
+        Assert.True(filter.IsStructural);
+        Assert.Equal(
+            new[] { "criteria_range1", "criteria1" },
+            filter.Children.Select(child => child.Info).ToArray());
+        Assert.Equal("G$10", filter.Children[1].Label);
+
+        var context = new RecordingContext { Result = "#VALUE!" };
+        context.Refs["'Investment Cashflows'!$C$83:$AF$83"] = "30 values";
+        context.Refs["'Investment Cashflows'!$C$43:$AF$43"] = "30 values";
+        context.Refs["'Summary'!G$10"] = "4";
+        FormulaEvaluator.EnrichTree(tree, context, "Summary");
+
+        Assert.NotNull(context.LastFormula);
+        Assert.StartsWith("=SUMIFS(", context.LastFormula, StringComparison.Ordinal);
+        Assert.DoesNotContain("3 args", context.LastFormula, StringComparison.Ordinal);
+        Assert.DoesNotContain("214682627", ExplorerLocations.DisplayValue(tree, tree), StringComparison.Ordinal);
+        Assert.Equal(ExplorerLocations.DisplayValue(tree, tree), ExplorerLocations.DisplayValue(sumifs, tree));
+        Assert.Equal(TraceUtils.ArrayValue, sumifs.Children[0].Value);
+        Assert.Equal(TraceUtils.ArrayValue, filter.Children[0].Value);
+        Assert.Equal("4", filter.Children[1].Value);
+        Assert.True(string.IsNullOrEmpty(filter.Value));
+    }
+
+    [Fact]
+    public void Countifs_and_sumif_group_each_criteria_pair()
+    {
+        var countifs = FormulaAstParser.Parse("=COUNTIFS(A1:A5,\">0\",B1:B5,C1)", "'S'!G1", "2");
+        var countNode = Assert.Single(countifs.Children);
+        Assert.Equal("COUNTIFS", countNode.Label);
+        Assert.Equal(2, countNode.Children.Count);
+        Assert.All(countNode.Children, child => Assert.Equal("Filter", child.Label));
+        Assert.Equal("criteria_range2", countNode.Children[1].Children[0].Info);
+        Assert.Equal("criteria2", countNode.Children[1].Children[1].Info);
+
+        var sumif = FormulaAstParser.Parse("=SUMIF(A1:A5,\">0\",B1:B5)", "'S'!G1", "2");
+        var sumifNode = Assert.Single(sumif.Children);
+        Assert.Equal("Filter", sumifNode.Children[0].Label);
+        Assert.Equal("range", sumifNode.Children[0].Children[0].Info);
+        Assert.Equal("criteria", sumifNode.Children[0].Children[1].Info);
+        Assert.Equal("sum_range", sumifNode.Children[1].Info);
+        Assert.Equal("B1:B5", sumifNode.Children[1].Label);
+    }
+
+    [Fact]
+    public void FormatTraceValue_groups_large_integers_and_hides_excel_error_codes()
+    {
+        var previous = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            var culture = (System.Globalization.CultureInfo)System.Globalization.CultureInfo.InvariantCulture.Clone();
+            culture.NumberFormat.NumberGroupSeparator = ".";
+            culture.NumberFormat.NumberDecimalSeparator = ",";
+            culture.NumberFormat.NumberGroupSizes = new[] { 3 };
+            System.Globalization.CultureInfo.CurrentCulture = culture;
+
+            Assert.Equal("6", TraceUtils.FormatTraceValue(6d));
+            Assert.Equal("4", TraceUtils.FormatTraceValue(4));
+            Assert.Equal("6", TraceUtils.FormatTraceValue("6,00"));
+            Assert.Equal("150.318.282", TraceUtils.FormatTraceValue(150318282d));
+            Assert.Equal("150.318.282", TraceUtils.FormatTraceValue("150318282"));
+            Assert.Equal("150.318.282", TraceUtils.FormatTraceValue("150318282, -2146826273"));
+            Assert.Equal("150.318.282", TraceUtils.FormatTraceValue(new object[] { 150318282d, -2146826273 }));
+            Assert.Equal("#VALUE!", TraceUtils.FormatTraceValue(-2146826273));
+            Assert.False(TraceUtils.IsUsableFormulaResult("#VALUE!"));
+            Assert.False(TraceUtils.IsUsableFormulaResult("-2146826273"));
+            Assert.True(TraceUtils.IsMultiCellRange("'Investment Cashflows'!$C$83:$AF$83"));
+            Assert.False(TraceUtils.IsMultiCellRange("G$10"));
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = previous;
+        }
+    }
+
+    [Fact]
+    public void Successful_sumifs_evaluation_keeps_the_evaluated_value()
+    {
+        const string formula = "=SUMIFS(A1:A5,B1:B5,C1)";
+        var tree = FormulaAstParser.Parse(formula, "'S'!G15", "9");
+        var context = new RecordingContext { Result = "9" };
+        FormulaEvaluator.EnrichTree(tree, context, "S");
+        Assert.Equal("=SUMIFS(A1:A5,B1:B5,C1)", context.LastFormula);
+        Assert.Equal("9", tree.Children[0].Value);
+        Assert.Equal("SUMIFS", tree.Children[0].Label);
+    }
+
+    private sealed class RecordingContext : IFormulaEvaluationContext
+    {
+        public string? Result { get; set; }
+        public string? LastFormula { get; private set; }
+        public System.Collections.Generic.Dictionary<string, string> Refs { get; } =
+            new(System.StringComparer.OrdinalIgnoreCase);
+
+        public string? EvaluateSubExpression(string subFormula, string contextWorksheet)
+        {
+            LastFormula = subFormula;
+            return Result;
+        }
+
+        public bool TryResolveReferenceValue(string reference, out string value) =>
+            Refs.TryGetValue(reference, out value!);
+
+        public int ResolveActiveIfBranch(string formula, System.Collections.Generic.IReadOnlyList<string> branches) => 0;
     }
 
     private static string DisplayLabel(FormulaAstNode node)

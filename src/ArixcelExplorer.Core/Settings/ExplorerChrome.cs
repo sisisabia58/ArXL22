@@ -34,7 +34,7 @@ public static class ExplorerChrome
 
     public const double ElementWidth = 190;
     public const double InfoWidth = 88;
-    public const double ValueWidth = 72;
+    public const double ValueWidth = 140;
     public const double LocationWidth = 110;
     public const double CountWidth = 48;
 
