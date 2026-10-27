@@ -1,8 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using ArixcelExplorer.Core.Settings;
+using ArixcelExplorer.Core.Tracing;
+using ArixcelExplorer.UI.Services;
 using ArixcelExplorer.UI.ViewModels;
 
 namespace ArixcelExplorer.UI.Windows;
@@ -37,6 +40,7 @@ public partial class DependentsWindow : Window
                 DependentsGrid.ScrollIntoView(DependentsGrid.SelectedItem);
             }
         };
+        ProbeAndApply();
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -75,6 +79,12 @@ public partial class DependentsWindow : Window
             case Key.Down:
                 _viewModel.MoveSelection(1);
                 return true;
+            case Key.Left:
+                _viewModel.ExpandOrMove(-1);
+                return true;
+            case Key.Right:
+                _viewModel.ExpandOrMove(1);
+                return true;
             case Key.Home:
                 _viewModel.SelectOrigin();
                 return true;
@@ -93,7 +103,7 @@ public partial class DependentsWindow : Window
     {
         if (e.Key == Key.System && e.SystemKey == Key.R)
         {
-            _viewModel.RequestRefresh();
+            RefreshAndProbe();
             e.Handled = true;
             return;
         }
@@ -102,6 +112,8 @@ public partial class DependentsWindow : Window
         {
             case Key.Up:
             case Key.Down:
+            case Key.Left:
+            case Key.Right:
             case Key.Home:
             case Key.Enter:
             case Key.Escape:
@@ -116,7 +128,7 @@ public partial class DependentsWindow : Window
                 e.Handled = true;
                 break;
             case Key.R when Keyboard.Modifiers == ModifierKeys.Alt:
-                _viewModel.RequestRefresh();
+                RefreshAndProbe();
                 e.Handled = true;
                 break;
         }
@@ -132,4 +144,65 @@ public partial class DependentsWindow : Window
     }
 
     private void Ok_Click(object sender, RoutedEventArgs e) => _viewModel.RequestKeepClose();
+
+    private void More_Click(object sender, RoutedEventArgs e)
+    {
+        MoreMenu.PlacementTarget = MoreButton;
+        MoreMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        Dispatcher.BeginInvoke(new Action(() => MoreMenu.IsOpen = true));
+    }
+
+    private void ExploreDependents_Click(object sender, RoutedEventArgs e) => _viewModel.RequestDrill();
+
+    private void GoToExcel_Click(object sender, RoutedEventArgs e) => _viewModel.RequestGoToExcel();
+
+    private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshAndProbe();
+
+    private void TreeGlyph_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not DependentRow row) return;
+        _viewModel.ToggleExpand(row.Key);
+        e.Handled = true;
+    }
+
+    private void DependentsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var row = _viewModel.SelectedRow;
+        if (row == null || !row.HasChildren) return;
+        _viewModel.ToggleExpand(row.Key);
+    }
+
+    private void RefreshAndProbe()
+    {
+        _viewModel.RequestRefresh();
+        ProbeAndApply();
+    }
+
+    private void ProbeAndApply()
+    {
+        try
+        {
+            var excel = ExcelDependentsProbe.TryRead(_viewModel.OriginAddress);
+            if (excel == null) return;
+
+            var arrows = new List<string>(excel.Count);
+            foreach (var entry in excel)
+            {
+                arrows.Add(entry.Address);
+            }
+
+            var host = new List<string>(_viewModel.Entries.Count);
+            foreach (var entry in _viewModel.Entries)
+            {
+                host.Add(entry.Address);
+            }
+
+            var merged = DependentsTree.Combine(_viewModel.OriginAddress, arrows, host);
+            _viewModel.ApplyAreas(merged);
+        }
+        catch
+        {
+            // Keep the host list when Excel cannot be queried from this window.
+        }
+    }
 }

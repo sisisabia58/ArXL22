@@ -34,32 +34,209 @@
               SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
               SelectionMode="Single"
               KeyboardNavigation.DirectionalNavigation="None"
-              PreviewKeyDown="Window_PreviewKeyDown">
+              PreviewKeyDown="Window_PreviewKeyDown"
+              MouseDoubleClick="DependentsGrid_MouseDoubleClick">
       <ListView.View>
         <GridView AllowsColumnReorder="False">
-          <GridViewColumn Header="Element" DisplayMemberBinding="{Binding AddressDisplay}"
-                          Width="{x:Static settings:ExplorerChrome.ElementWidth}" />
+          <GridViewColumn Header="Range" Width="{x:Static settings:ExplorerChrome.DependentsRangeWidth}">
+            <GridViewColumn.CellTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                  <ItemsControl ItemsSource="{Binding Guides}"
+                                Focusable="False"
+                                IsHitTestVisible="False"
+                                BorderThickness="0"
+                                Padding="0">
+                    <ItemsControl.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                      </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <Grid Width="{x:Static settings:ExplorerTreeChrome.IndentPerLevel}"
+                              Height="{x:Static settings:ExplorerChrome.RowHeight}"
+                              IsHitTestVisible="False">
+                          <Line X1="6" Y1="0" X2="6" Y2="20"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding FullVertical}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="0" X2="6" Y2="10"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding Elbow}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="10" X2="6" Y2="20"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding ElbowContinues}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                          <Line X1="6" Y1="10" X2="12" Y2="10"
+                                Stroke="{StaticResource ArixcelTreeLineBrush}"
+                                StrokeThickness="1"
+                                StrokeDashArray="1 1.2"
+                                SnapsToDevicePixels="True">
+                            <Line.Style>
+                              <Style TargetType="Line">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                  <DataTrigger Binding="{Binding Elbow}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                  </DataTrigger>
+                                </Style.Triggers>
+                              </Style>
+                            </Line.Style>
+                          </Line>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Grid Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                        Height="{x:Static settings:ExplorerChrome.RowHeight}"
+                        Margin="0,0,4,0">
+                    <Line X1="6" Y1="13" X2="6" Y2="20"
+                          Stroke="{StaticResource ArixcelTreeLineBrush}"
+                          StrokeThickness="1"
+                          StrokeDashArray="1 1.2"
+                          IsHitTestVisible="False"
+                          SnapsToDevicePixels="True">
+                      <Line.Style>
+                        <Style TargetType="Line">
+                          <Setter Property="Visibility" Value="Collapsed" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding ShowDropLine}" Value="True">
+                              <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Line.Style>
+                    </Line>
+                    <Border Width="11"
+                            Height="11"
+                            VerticalAlignment="Center"
+                            BorderBrush="#6A6A6A"
+                            BorderThickness="1"
+                            Background="White"
+                            Cursor="Hand"
+                            PreviewMouseLeftButtonDown="TreeGlyph_PreviewMouseLeftButtonDown">
+                      <Border.Style>
+                        <Style TargetType="Border">
+                          <Setter Property="Visibility" Value="Hidden" />
+                          <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasChildren}" Value="True">
+                              <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                          </Style.Triggers>
+                        </Style>
+                      </Border.Style>
+                      <Grid Width="9" Height="9" IsHitTestVisible="False">
+                        <Border Height="1" Width="7" Background="#404040" VerticalAlignment="Center" />
+                        <Border Width="1" Height="7" Background="#404040" HorizontalAlignment="Center">
+                          <Border.Style>
+                            <Style TargetType="Border">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Border.Style>
+                        </Border>
+                      </Grid>
+                    </Border>
+                  </Grid>
+                  <TextBlock Text="{Binding Display}"
+                             FontFamily="Segoe UI"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </DataTemplate>
+            </GridViewColumn.CellTemplate>
+          </GridViewColumn>
           <GridViewColumn Header="Count" DisplayMemberBinding="{Binding CountDisplay}"
-                          Width="{x:Static settings:ExplorerChrome.CountWidth}" />
-          <GridViewColumn Header="Value" DisplayMemberBinding="{Binding Value}"
-                          Width="{x:Static settings:ExplorerChrome.ValueWidth}" />
-          <GridViewColumn Header="Location" DisplayMemberBinding="{Binding Address}"
-                          Width="{x:Static settings:ExplorerChrome.LocationWidth}" />
+                          Width="{x:Static settings:ExplorerChrome.DependentsCountWidth}" />
         </GridView>
       </ListView.View>
     </ListView>
 
-    <DockPanel Grid.Row="1" Margin="0,6,0,0" LastChildFill="False">
-      <Button DockPanel.Dock="Right"
-              Content="OK"
-              Width="{x:Static settings:ExplorerChrome.OkButtonWidth}"
-              Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
-              Click="Ok_Click" />
-      <TextBlock Text="{Binding StatusText}"
-                 VerticalAlignment="Center"
-                 Foreground="#333333"
-                 Margin="2,0,8,0"
-                 TextTrimming="CharacterEllipsis" />
+    <DockPanel Grid.Row="1" Margin="0,6,0,0" LastChildFill="True">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+        <Button x:Name="MoreButton"
+                AutomationProperties.Name="More"
+                AutomationProperties.AutomationId="More"
+                Width="{x:Static settings:ExplorerChrome.MoreButtonWidth}"
+                Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
+                Margin="0,0,6,0"
+                Click="More_Click">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <TextBlock Text="More" VerticalAlignment="Center" />
+            <Path Data="M 0,0 L 7,0 L 3.5,4 Z"
+                  Fill="#333333"
+                  Width="7"
+                  Height="4"
+                  Margin="6,1,0,0"
+                  Stretch="Fill"
+                  VerticalAlignment="Center" />
+          </StackPanel>
+          <Button.ContextMenu>
+            <ContextMenu x:Name="MoreMenu" Placement="Bottom">
+              <MenuItem Header="Explore Dependents" InputGestureText="Ctrl+Shift+Q" Click="ExploreDependents_Click" />
+              <MenuItem Header="Go to Excel and Back" InputGestureText="Ctrl+Back" Click="GoToExcel_Click" />
+              <Separator />
+              <MenuItem Header="Refresh" InputGestureText="Alt+R" Click="Refresh_Click" />
+            </ContextMenu>
+          </Button.ContextMenu>
+        </Button>
+        <Button Content="OK"
+                Width="{x:Static settings:ExplorerChrome.OkButtonWidth}"
+                Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
+                Click="Ok_Click" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <CheckBox Content="Group by sheet"
+                  AutomationProperties.Name="Group by sheet"
+                  IsChecked="{Binding GroupBySheet, Mode=TwoWay}"
+                  VerticalAlignment="Center"
+                  Margin="2,0,12,0" />
+        <TextBlock Text="{Binding StatusText}"
+                   VerticalAlignment="Center"
+                   Foreground="#333333"
+                   TextTrimming="CharacterEllipsis" />
+      </StackPanel>
     </DockPanel>
   </Grid>
 </Window>

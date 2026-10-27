@@ -16,10 +16,12 @@ public static class ExplorerChrome
     public const double LegacyCompactWidth = 428;
     public const double LegacyCompactHeight = 338;
 
-    public const double DependentsWidth = 520;
-    public const double DependentsHeight = 340;
-    public const double DependentsMinWidth = 400;
+    public const double DependentsWidth = 560;
+    public const double DependentsHeight = 560;
+    public const double DependentsMinWidth = 460;
     public const double DependentsMinHeight = 240;
+    public const double DependentsRangeWidth = 420;
+    public const double DependentsCountWidth = 72;
 
     public const double OptionsWidth = 380;
     public const double OptionsHeight = 292;
