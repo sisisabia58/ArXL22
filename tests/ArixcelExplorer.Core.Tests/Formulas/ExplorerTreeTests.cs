@@ -213,6 +213,7 @@ public sealed class ExplorerTreeTests
         var navigation = ExplorerLocations.NavigationAddress(rows[1], origin);
         Assert.Equal("'Sheet1'!D4:E4", navigation);
         Assert.Equal("D4:E4", TraceUtils.FormatExplorerLocation(navigation, origin));
+        Assert.Equal(1, ExplorerLocations.OpeningSelectionIndex(rows.Count));
         Assert.Equal("6", ExplorerLocations.DisplayValue(rows[1], tree));
         Assert.Equal("6", ExplorerLocations.DisplayValue(rows[0], tree));
         Assert.Equal("D4", formula.Substring(rows[2].SourceStart, rows[2].SourceLength));
@@ -239,6 +240,14 @@ public sealed class ExplorerTreeTests
         Assert.Equal("'S'!D4:E4", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'S'!E4" }));
         Assert.Equal("'S'!D4", TraceUtils.BoundingAddress(new[] { "'S'!$D$4" }));
         Assert.Equal("", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'Other'!E4" }));
+    }
+
+    [Fact]
+    public void OpeningSelectionIndex_highlights_the_expression_row()
+    {
+        Assert.Equal(1, ExplorerLocations.OpeningSelectionIndex(4));
+        Assert.Equal(0, ExplorerLocations.OpeningSelectionIndex(1));
+        Assert.Equal(0, ExplorerLocations.OpeningSelectionIndex(0));
     }
 
     [Fact]

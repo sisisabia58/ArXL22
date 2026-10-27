@@ -188,6 +188,7 @@ public partial class ExplorerWindow : Window
             paragraph.Inlines.Add(new Run(text) { Foreground = FormulaTextBrush });
         }
 
+        FormulaBox.Document.PagePadding = new Thickness(0);
         FormulaBox.Document.Blocks.Clear();
         FormulaBox.Document.Blocks.Add(paragraph);
     }

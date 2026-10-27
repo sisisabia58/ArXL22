@@ -35,6 +35,11 @@ public static class ExplorerLocations
         return "";
     }
 
+    /// <summary>
+    /// Arixcel opens =D4+E4 with the expression row selected, not the origin cell.
+    /// </summary>
+    public static int OpeningSelectionIndex(int visibleRowCount) => visibleRowCount > 1 ? 1 : 0;
+
     public static string DependentsStatus(int dependentCount)
     {
         if (dependentCount <= 0) return "No direct dependents found";

@@ -581,8 +581,16 @@ public static class AddInCoordinator
 
     private static void ApplyPlacement(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
     {
-        window.Width = placement.Width > 0 ? placement.Width : defaultWidth;
-        window.Height = placement.Height > 0 ? placement.Height : defaultHeight;
+        var savedWidth = placement.Width;
+        var savedHeight = placement.Height;
+        if (ExplorerChrome.IsLegacyCompact(savedWidth, savedHeight))
+        {
+            savedWidth = 0;
+            savedHeight = 0;
+        }
+
+        window.Width = savedWidth > 0 ? savedWidth : defaultWidth;
+        window.Height = savedHeight > 0 ? savedHeight : defaultHeight;
         window.WindowStartupLocation = WindowStartupLocation.Manual;
 
         if (placement.HasPosition && IsOnScreen(placement))

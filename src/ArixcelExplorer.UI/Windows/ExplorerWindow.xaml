@@ -148,12 +148,12 @@
                         </Style>
                       </Line.Style>
                     </Line>
-                    <Border Width="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
-                            Height="{x:Static settings:ExplorerTreeChrome.GlyphSize}"
+                    <Border Width="11"
+                            Height="11"
                             VerticalAlignment="Center"
-                            BorderBrush="#808080"
+                            BorderBrush="#6A6A6A"
                             BorderThickness="1"
-                            Background="#F8F8F8"
+                            Background="White"
                             Cursor="Hand"
                             PreviewMouseLeftButtonDown="TreeGlyph_PreviewMouseLeftButtonDown">
                       <Border.Style>
@@ -166,12 +166,21 @@
                           </Style.Triggers>
                         </Style>
                       </Border.Style>
-                      <TextBlock Text="{Binding Glyph}"
-                                 FontFamily="Segoe UI"
-                                 FontSize="10"
-                                 FontWeight="Bold"
-                                 HorizontalAlignment="Center"
-                                 VerticalAlignment="Center" />
+                      <Grid Width="9" Height="9" IsHitTestVisible="False">
+                        <Border Height="1" Width="7" Background="#404040" VerticalAlignment="Center" />
+                        <Border Width="1" Height="7" Background="#404040" HorizontalAlignment="Center">
+                          <Border.Style>
+                            <Style TargetType="Border">
+                              <Setter Property="Visibility" Value="Collapsed" />
+                              <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                                  <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                              </Style.Triggers>
+                            </Style>
+                          </Border.Style>
+                        </Border>
+                      </Grid>
                     </Border>
                   </Grid>
                   <TextBlock Text="{Binding Component}"
@@ -200,16 +209,18 @@
             Height="{x:Static settings:ExplorerChrome.FormulaPaneHeight}">
       <Grid>
         <RichTextBox x:Name="FormulaBox"
+                     AutomationProperties.Name="{Binding FormulaText}"
                      IsReadOnly="True"
                      IsDocumentEnabled="True"
                      AcceptsReturn="False"
                      FontFamily="Segoe UI"
                      FontSize="{x:Static settings:ExplorerChrome.FontSize}"
+                     Foreground="#1A1A1A"
                      BorderThickness="0"
-                     Background="Transparent"
-                     Padding="0"
+                     Background="White"
+                     Padding="1,0,0,0"
                      VerticalScrollBarVisibility="Disabled"
-                     HorizontalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Hidden"
                      PreviewMouseLeftButtonDown="FormulaBox_PreviewMouseLeftButtonDown" />
         <TextBox x:Name="FormulaEditor"
                  Visibility="Collapsed"
@@ -229,11 +240,22 @@
                 HorizontalAlignment="Right"
                 Margin="0,6,0,0">
       <Button x:Name="MoreButton"
-              Content="More ▾"
+              AutomationProperties.Name="More"
+              AutomationProperties.AutomationId="More"
               Width="{x:Static settings:ExplorerChrome.MoreButtonWidth}"
               Height="{x:Static settings:ExplorerChrome.OkButtonHeight}"
               Margin="0,0,6,0"
               Click="More_Click">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="More" VerticalAlignment="Center" />
+          <Path Data="M 0,0 L 7,0 L 3.5,4 Z"
+                Fill="#333333"
+                Width="7"
+                Height="4"
+                Margin="6,1,0,0"
+                Stretch="Fill"
+                VerticalAlignment="Center" />
+        </StackPanel>
         <Button.ContextMenu>
           <ContextMenu x:Name="MoreMenu" Placement="Bottom">
             <MenuItem Header="Edit Formula" InputGestureText="F2" Click="EditFormula_Click" />

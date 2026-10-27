@@ -163,7 +163,10 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         FormulaAstParser.CollapseFunctions(root);
         FormulaText = formulaText;
         RefreshRows();
-        if (Rows.Count > 0) ApplySelection(0, navigate: false);
+        if (Rows.Count > 0)
+        {
+            ApplySelection(ExplorerLocations.OpeningSelectionIndex(Rows.Count), navigate: false);
+        }
     }
 
     public void RefreshRows()

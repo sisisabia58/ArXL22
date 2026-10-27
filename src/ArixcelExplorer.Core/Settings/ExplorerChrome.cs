@@ -10,8 +10,11 @@ public static class ExplorerChrome
 
     public const double ExplorerWidth = 560;
     public const double ExplorerHeight = 420;
-    public const double ExplorerMinWidth = 440;
-    public const double ExplorerMinHeight = 280;
+    public const double ExplorerMinWidth = 520;
+    public const double ExplorerMinHeight = 300;
+
+    public const double LegacyCompactWidth = 428;
+    public const double LegacyCompactHeight = 338;
 
     public const double DependentsWidth = 520;
     public const double DependentsHeight = 340;
@@ -23,7 +26,11 @@ public static class ExplorerChrome
 
     public const double RowHeight = 20;
     public const double HeaderHeight = 24;
-    public const double FormulaPaneHeight = 36;
+    public const double FormulaPaneHeight = 32;
+
+    public static bool IsLegacyCompact(double width, double height) =>
+        System.Math.Abs(width - LegacyCompactWidth) < 2 &&
+        System.Math.Abs(height - LegacyCompactHeight) < 2;
 
     public const double ElementWidth = 190;
     public const double InfoWidth = 88;

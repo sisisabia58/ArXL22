@@ -2,16 +2,16 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:settings="clr-namespace:ArixcelExplorer.Core.Settings;assembly=ArixcelExplorer.Core">
   <SolidColorBrush x:Key="ArixcelAccentBrush" Color="#0563C1" />
-  <SolidColorBrush x:Key="ArixcelSelectionBrush" Color="#C5DFF6" />
+  <SolidColorBrush x:Key="ArixcelSelectionBrush" Color="#E4E4E4" />
   <SolidColorBrush x:Key="ArixcelActiveBranchBrush" Color="#FFE49A" />
   <SolidColorBrush x:Key="ArixcelBorderBrush" Color="#808080" />
   <SolidColorBrush x:Key="ArixcelPanelBrush" Color="#FFFFFF" />
-  <SolidColorBrush x:Key="ArixcelHighlightBrush" Color="#C5DFF6" />
+  <SolidColorBrush x:Key="ArixcelHighlightBrush" Color="#E4E4E4" />
   <SolidColorBrush x:Key="ArixcelHighlightTextBrush" Color="#1A1A1A" />
   <SolidColorBrush x:Key="ArixcelWindowBrush" Color="#F0F0F0" />
   <SolidColorBrush x:Key="ArixcelHeaderBrush" Color="#F0F0F0" />
   <SolidColorBrush x:Key="ArixcelFormulaLinkBrush" Color="#0000FF" />
-  <SolidColorBrush x:Key="ArixcelTreeLineBrush" Color="#8A8A8A" />
+  <SolidColorBrush x:Key="ArixcelTreeLineBrush" Color="#B0B0B0" />
 
   <Style TargetType="Window">
     <Setter Property="FontFamily" Value="Segoe UI" />
@@ -39,9 +39,27 @@
     <Setter Property="FontWeight" Value="Normal" />
     <Setter Property="HorizontalContentAlignment" Value="Left" />
     <Setter Property="Background" Value="{StaticResource ArixcelHeaderBrush}" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="GridViewColumnHeader">
+          <Border Background="#F7F7F7"
+                  BorderBrush="#D0D0D0"
+                  BorderThickness="0,0,1,1"
+                  Padding="{TemplateBinding Padding}">
+            <ContentPresenter VerticalAlignment="Center" />
+          </Border>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
   </Style>
 
   <Style x:Key="ArixcelListRowStyle" TargetType="ListViewItem">
+    <Style.Resources>
+      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E4E4E4" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1A1A1A" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E4E4E4" />
+      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1A1A1A" />
+    </Style.Resources>
     <Setter Property="Height" Value="{x:Static settings:ExplorerChrome.RowHeight}" />
     <Setter Property="MinHeight" Value="{x:Static settings:ExplorerChrome.RowHeight}" />
     <Setter Property="Padding" Value="0" />
@@ -52,12 +70,26 @@
     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
     <Setter Property="Background" Value="Transparent" />
     <Setter Property="Foreground" Value="#1A1A1A" />
-    <Style.Resources>
-      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#C5DFF6" />
-      <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#1A1A1A" />
-      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#C5DFF6" />
-      <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#1A1A1A" />
-    </Style.Resources>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ListViewItem">
+          <Border x:Name="RowBorder"
+                  Background="{TemplateBinding Background}"
+                  Padding="0"
+                  SnapsToDevicePixels="True">
+            <GridViewRowPresenter VerticalAlignment="Center"
+                                  Content="{TemplateBinding Content}"
+                                  Columns="{TemplateBinding GridView.ColumnCollection}" />
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter TargetName="RowBorder" Property="Background" Value="#E4E4E4" />
+              <Setter Property="Foreground" Value="#1A1A1A" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
     <Style.Triggers>
       <DataTrigger Binding="{Binding IsActiveBranch}" Value="True">
         <Setter Property="FontWeight" Value="Bold" />
