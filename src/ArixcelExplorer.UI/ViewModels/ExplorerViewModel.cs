@@ -143,6 +143,7 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     }
 
     public string? FormulaEditSeed { get; private set; }
+    public int FormulaEditCaret { get; private set; } = -1;
 
     public event PropertyChangedEventHandler? PropertyChanged;
     public event System.Action<ExplorerTreeRow>? NavigateRequested;
@@ -277,11 +278,15 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
 
     public void RequestRefresh() => RefreshRequested?.Invoke();
 
-    public void SelectFormulaToken(int charIndex, bool additive)
+    /// <summary>
+    /// Selects the tree row for a formula reference and asks Excel to jump there.
+    /// Returns false when the character is not a cell or range reference.
+    /// </summary>
+    public bool SelectFormulaToken(int charIndex, bool additive)
     {
         var sheet = TraceUtils.ParseWorksheetScopedAddress(RootAddress)?.WorksheetName ?? "";
         var hit = FormulaTokenHits.HitTest(FormulaText, sheet, charIndex);
-        if (hit == null || string.IsNullOrWhiteSpace(hit.Address)) return;
+        if (hit == null || string.IsNullOrWhiteSpace(hit.Address)) return false;
 
         if (!additive)
         {
@@ -291,24 +296,46 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         var firstMatch = -1;
         for (var i = 0; i < Rows.Count; i++)
         {
-            if (!TraceUtils.AddressesReferToSameRange(hit.Address, Rows[i].Location)) continue;
+            if (!RowPointsAt(Rows[i], hit.Address!)) continue;
             Rows[i].IsSelected = true;
             if (firstMatch < 0) firstMatch = i;
         }
 
-        if (firstMatch < 0) return;
-        if (_selectedIndex != firstMatch)
+        ExplorerTreeRow target;
+        if (firstMatch >= 0)
         {
-            _selectedIndex = firstMatch;
-            OnPropertyChanged(nameof(SelectedIndex));
+            target = Rows[firstMatch];
+            if (string.IsNullOrWhiteSpace(target.NavigationAddress))
+            {
+                target.NavigationAddress = hit.Address!;
+            }
+
+            if (_selectedIndex != firstMatch)
+            {
+                _selectedIndex = firstMatch;
+                OnPropertyChanged(nameof(SelectedIndex));
+            }
+            else
+            {
+                OnPropertyChanged(nameof(SelectedIndex));
+            }
         }
         else
         {
-            OnPropertyChanged(nameof(SelectedIndex));
+            target = new ExplorerTreeRow
+            {
+                NavigationAddress = hit.Address!,
+                Location = hit.Address!
+            };
         }
 
-        NavigateRequested?.Invoke(Rows[firstMatch]);
+        NavigateRequested?.Invoke(target);
+        return true;
     }
+
+    private static bool RowPointsAt(ExplorerTreeRow row, string address) =>
+        TraceUtils.AddressesReferToSameRange(address, row.NavigationAddress) ||
+        TraceUtils.AddressesReferToSameRange(address, row.Location);
 
     public IReadOnlyList<FormulaHighlightSpan> SelectedFormulaSpans()
     {
@@ -361,10 +388,11 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
 
     public void RequestBackClose() => CloseRequested?.Invoke(ExplorerCloseMode.RestorePrevious);
 
-    public void BeginFormulaEdit(string? typedPrefix = null)
+    public void BeginFormulaEdit(string? typedPrefix = null, int caret = -1)
     {
         if (IsEditingFormula) return;
         FormulaEditSeed = typedPrefix;
+        FormulaEditCaret = caret;
         IsEditingFormula = true;
         OnPropertyChanged(nameof(FormulaEditSeed));
     }
@@ -373,10 +401,22 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     {
         if (!IsEditingFormula) return;
         FormulaEditSeed = null;
+        FormulaEditCaret = -1;
         IsEditingFormula = false;
     }
 
-    public void ApplyFormulaEdit(string formula) => FormulaApplyRequested?.Invoke(formula ?? "");
+    public void ApplyFormulaEdit(string formula)
+    {
+        var text = FormulaEdit.Normalize(formula);
+        FormulaApplyRequested?.Invoke(text);
+        FormulaEditSeed = null;
+        FormulaEditCaret = -1;
+        IsEditingFormula = false;
+        if (text.Length > 0)
+        {
+            FormulaText = text;
+        }
+    }
 
     public void RequestExplorePrecedents() => ExplorePrecedentsRequested?.Invoke();
 

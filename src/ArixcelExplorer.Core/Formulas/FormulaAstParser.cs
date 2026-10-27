@@ -448,6 +448,7 @@ public static class FormulaAstParser
         var nodes = new List<FormulaAstNode>();
         var index = start;
         var depth = 1;
+        var brace = 0;
         var argStart = start;
         var inString = false;
 
@@ -478,7 +479,9 @@ public static class FormulaAstParser
                 continue;
             }
 
-            if (ch == '(') depth += 1;
+            if (ch == '{') brace += 1;
+            else if (ch == '}') brace = Math.Max(0, brace - 1);
+            else if (ch == '(') depth += 1;
             else if (ch == ')')
             {
                 depth -= 1;
@@ -489,7 +492,7 @@ public static class FormulaAstParser
                     return (nodes, index);
                 }
             }
-            else if (ch == ',' && depth == 1)
+            else if ((ch == ',' || ch == ';') && depth == 1 && brace == 0)
             {
                 var slice = ParseSlice(input, argStart, index, functionId, contextLocation);
                 if (slice != null) nodes.Add(slice);
@@ -769,6 +772,15 @@ public static class FormulaAstParser
                 grouped.Add(source[index]);
                 index += 1;
             }
+        }
+
+        var filterNumber = 1;
+        foreach (var child in grouped)
+        {
+            if (!child.IsStructural) continue;
+            child.Label = "Filter " + filterNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            child.Info = "<filter>";
+            filterNumber += 1;
         }
 
         function.Children = grouped;

@@ -353,7 +353,8 @@ public sealed class ExplorerTreeTests
         Assert.Equal("'Investment Cashflows'!$C$83:$AF$83", sumifs.Children[0].Label);
 
         var filter = sumifs.Children[1];
-        Assert.Equal("Filter", filter.Label);
+        Assert.Equal("Filter 1", filter.Label);
+        Assert.Equal("<filter>", filter.Info);
         Assert.True(filter.IsStructural);
         Assert.Equal(
             new[] { "criteria_range1", "criteria1" },
@@ -384,13 +385,15 @@ public sealed class ExplorerTreeTests
         var countNode = Assert.Single(countifs.Children);
         Assert.Equal("COUNTIFS", countNode.Label);
         Assert.Equal(2, countNode.Children.Count);
-        Assert.All(countNode.Children, child => Assert.Equal("Filter", child.Label));
+        Assert.Equal("Filter 1", countNode.Children[0].Label);
+        Assert.Equal("Filter 2", countNode.Children[1].Label);
+        Assert.Equal("<filter>", countNode.Children[0].Info);
         Assert.Equal("criteria_range2", countNode.Children[1].Children[0].Info);
         Assert.Equal("criteria2", countNode.Children[1].Children[1].Info);
 
         var sumif = FormulaAstParser.Parse("=SUMIF(A1:A5,\">0\",B1:B5)", "'S'!G1", "2");
         var sumifNode = Assert.Single(sumif.Children);
-        Assert.Equal("Filter", sumifNode.Children[0].Label);
+        Assert.Equal("Filter 1", sumifNode.Children[0].Label);
         Assert.Equal("range", sumifNode.Children[0].Children[0].Info);
         Assert.Equal("criteria", sumifNode.Children[0].Children[1].Info);
         Assert.Equal("sum_range", sumifNode.Children[1].Info);

@@ -5,8 +5,10 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using ArixcelExplorer.Core.Formulas;
 using ArixcelExplorer.Core.Settings;
 using ArixcelExplorer.Core.Tracing;
+using ArixcelExplorer.UI.Services;
 using ArixcelExplorer.UI.ViewModels;
 
 namespace ArixcelExplorer.UI.Windows;
@@ -27,6 +29,10 @@ public partial class ExplorerWindow : Window
     private readonly ExplorerCloseBehavior _closeBehavior;
     private bool _explicitClose;
     private bool _syncingSelection;
+    private bool _committingFormula;
+    private bool _fittingFormula;
+    private double _appliedFormulaExtra;
+    private FormulaCaretHook? _caretHook;
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
 
@@ -125,15 +131,34 @@ public partial class ExplorerWindow : Window
         _viewModel.ToggleExpand(_viewModel.Rows[_viewModel.SelectedIndex].Id);
     }
 
+    private void FormulaBox_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        var index = CharIndexFromPoint(FormulaBox, e.GetPosition(FormulaBox));
+        FormulaBox.Cursor = ReferenceAt(index) == null ? Cursors.IBeam : Cursors.Hand;
+    }
+
     private void FormulaBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         var index = CharIndexFromPoint(FormulaBox, e.GetPosition(FormulaBox));
-        var additive = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
-        _viewModel.SelectFormulaToken(index, additive);
-        SyncListSelection();
-        PaintFormula();
-        RestoreKeyboardFocus();
+        if (ReferenceAt(index) != null)
+        {
+            var additive = (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control;
+            _viewModel.SelectFormulaToken(index, additive);
+            SyncListSelection();
+            PaintFormula();
+            RestoreKeyboardFocus();
+            e.Handled = true;
+            return;
+        }
+
+        _viewModel.BeginFormulaEdit(caret: index);
         e.Handled = true;
+    }
+
+    private FormulaTokenSpan? ReferenceAt(int index)
+    {
+        var sheet = TraceUtils.ParseWorksheetScopedAddress(_viewModel.RootAddress)?.WorksheetName ?? "";
+        return FormulaTokenHits.HitTest(_viewModel.FormulaText, sheet, index);
     }
 
     private void PaintFormula()
@@ -178,34 +203,98 @@ public partial class ExplorerWindow : Window
 
             paragraph.Inlines.Add(new Run(text.Substring(index, next - index))
             {
-                Foreground = FormulaTextBrush
+                Foreground = FormulaTextBrush,
+                TextDecorations = null
             });
             index = next;
         }
 
         if (paragraph.Inlines.Count == 0)
         {
-            paragraph.Inlines.Add(new Run(text) { Foreground = FormulaTextBrush });
+            paragraph.Inlines.Add(new Run(text) { Foreground = FormulaTextBrush, TextDecorations = null });
         }
 
         FormulaBox.Document.PagePadding = new Thickness(0);
+        var innerWidth = FormulaInnerWidth();
+        if (innerWidth > 40)
+        {
+            FormulaBox.Document.PageWidth = innerWidth;
+        }
+
         FormulaBox.Document.Blocks.Clear();
         FormulaBox.Document.Blocks.Add(paragraph);
+        FormulaBox.Selection.Select(FormulaBox.Document.ContentEnd, FormulaBox.Document.ContentEnd);
+        FitFormulaPane();
+    }
+
+    private void FormulaBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged)
+        {
+            FitFormulaPane();
+        }
+    }
+
+    private void FitFormulaPane()
+    {
+        if (_fittingFormula || FormulaBorder == null) return;
+        var inner = FormulaInnerWidth();
+        if (inner < 40) return;
+        _fittingFormula = true;
+        try
+        {
+            var text = _viewModel.IsEditingFormula ? FormulaEditor.Text : _viewModel.FormulaText;
+            var height = FormulaPaneLayout.HeightFor(text, inner);
+            FormulaBorder.Height = height;
+            if (FormulaBox.Document != null && !_viewModel.IsEditingFormula)
+            {
+                FormulaBox.Document.PageWidth = inner;
+            }
+
+            var extra = height - ExplorerChrome.FormulaPaneHeight;
+            var delta = extra - _appliedFormulaExtra;
+            if (Math.Abs(delta) > 1)
+            {
+                Height = Math.Max(MinHeight, Height + delta);
+                _appliedFormulaExtra = extra;
+            }
+        }
+        finally
+        {
+            _fittingFormula = false;
+        }
+    }
+
+    private double FormulaInnerWidth()
+    {
+        var width = FormulaBorder.ActualWidth - FormulaBorder.Padding.Left - FormulaBorder.Padding.Right - 4;
+        if (width >= 40) return width;
+        return Math.Max(48, ActualWidth - 28);
     }
 
     private void ApplyFormulaEditChrome()
     {
         if (_viewModel.IsEditingFormula)
         {
+            _caretHook ??= new FormulaCaretHook();
             FormulaBox.Visibility = Visibility.Collapsed;
             FormulaEditor.Visibility = Visibility.Visible;
             var seed = _viewModel.FormulaEditSeed ?? "";
             FormulaEditor.Text = (_viewModel.FormulaText ?? "") + seed;
+            FitFormulaPane();
             FormulaEditor.Focus();
-            FormulaEditor.CaretIndex = FormulaEditor.Text.Length;
+            var caret = _viewModel.FormulaEditCaret;
+            if (!string.IsNullOrEmpty(seed) || caret < 0)
+            {
+                caret = FormulaEditor.Text.Length;
+            }
+
+            FormulaEditor.CaretIndex = Math.Max(0, Math.Min(caret, FormulaEditor.Text.Length));
             return;
         }
 
+        _caretHook?.Dispose();
+        _caretHook = null;
         FormulaEditor.Visibility = Visibility.Collapsed;
         FormulaBox.Visibility = Visibility.Visible;
         PaintFormula();
@@ -243,7 +332,7 @@ public partial class ExplorerWindow : Window
         {
             if (key == Key.Enter)
             {
-                _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+                CommitFormulaEdit();
                 return true;
             }
 
@@ -287,7 +376,7 @@ public partial class ExplorerWindow : Window
         {
             if (e.Key == Key.Enter)
             {
-                _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+                CommitFormulaEdit();
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)
@@ -385,7 +474,7 @@ public partial class ExplorerWindow : Window
     {
         if (e.Key == Key.Enter)
         {
-            _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+            CommitFormulaEdit();
             e.Handled = true;
         }
         else if (e.Key == Key.Escape)
@@ -400,6 +489,32 @@ public partial class ExplorerWindow : Window
         MoreMenu.PlacementTarget = MoreButton;
         MoreMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
         Dispatcher.BeginInvoke(new Action(() => MoreMenu.IsOpen = true));
+    }
+
+    private void FormulaEditor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        if (_committingFormula || !_viewModel.IsEditingFormula) return;
+        CommitFormulaEdit();
+    }
+
+    private void CommitFormulaEdit()
+    {
+        if (_committingFormula || !_viewModel.IsEditingFormula) return;
+        _committingFormula = true;
+        try
+        {
+            var text = FormulaEdit.Normalize(FormulaEditor.Text);
+            var wrote = ExcelFormulaWriter.TryWrite(_viewModel.RootAddress, text);
+            _viewModel.ApplyFormulaEdit(text);
+            if (wrote)
+            {
+                _viewModel.RequestRefresh();
+            }
+        }
+        finally
+        {
+            _committingFormula = false;
+        }
     }
 
     private void EditFormula_Click(object sender, RoutedEventArgs e) => _viewModel.BeginFormulaEdit();
@@ -429,6 +544,8 @@ public partial class ExplorerWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        _caretHook?.Dispose();
+        _caretHook = null;
         if (_explicitClose) return;
         if (_closeBehavior == ExplorerCloseBehavior.EscNavigatesBack)
         {

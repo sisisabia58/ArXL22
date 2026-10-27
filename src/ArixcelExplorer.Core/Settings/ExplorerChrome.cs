@@ -27,6 +27,7 @@ public static class ExplorerChrome
     public const double RowHeight = 20;
     public const double HeaderHeight = 24;
     public const double FormulaPaneHeight = 32;
+    public const double FormulaPaneMaxHeight = 160;
 
     public static bool IsLegacyCompact(double width, double height) =>
         System.Math.Abs(width - LegacyCompactWidth) < 2 &&

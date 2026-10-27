@@ -371,11 +371,11 @@ public static class TraceUtils
         if (parsedLeft != null && parsedRight != null)
         {
             return string.Equals(parsedLeft.WorksheetName, parsedRight.WorksheetName, StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(parsedLeft.RangeAddress, parsedRight.RangeAddress, StringComparison.OrdinalIgnoreCase);
+                   string.Equals(StripAbsolute(parsedLeft.RangeAddress), StripAbsolute(parsedRight.RangeAddress), StringComparison.OrdinalIgnoreCase);
         }
 
-        var leftRange = parsedLeft?.RangeAddress ?? leftText;
-        var rightRange = parsedRight?.RangeAddress ?? rightText;
+        var leftRange = StripAbsolute(parsedLeft?.RangeAddress ?? leftText);
+        var rightRange = StripAbsolute(parsedRight?.RangeAddress ?? rightText);
         return string.Equals(leftRange, rightRange, StringComparison.OrdinalIgnoreCase);
     }
 
