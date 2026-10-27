@@ -58,13 +58,14 @@ internal static class ExcelDependentsProbe
             }
 
             try { originSheet = Get(origin, "Worksheet"); } catch { /* cleared below if present */ }
-            try { Invoke(origin, "Select"); } catch { /* DirectDependents does not need the selection */ }
             try { ReadAreas(origin, areas); } catch { /* no same-sheet dependents */ }
             try
             {
                 if (ShowDependents(origin))
                 {
-                    WalkArrows(excel, originAddress!, arrows);
+                    // Do not select between arrows. Changing the selection clears
+                    // tracer arrows, so later rows such as D67:J67 never appear.
+                    WalkArrows(excel, origin, originAddress!, arrows);
                 }
             }
             catch
@@ -119,7 +120,7 @@ internal static class ExcelDependentsProbe
     {
         var deps = Get(origin, "DirectDependents");
         if (deps == null) return;
-        foreach (var piece in Expand(deps))
+        foreach (var piece in ListAddresses(deps))
         {
             if (!string.IsNullOrEmpty(piece)) areas.Add(piece);
         }
@@ -146,11 +147,12 @@ internal static class ExcelDependentsProbe
         }
     }
 
-    private static void WalkArrows(object excel, string originAddress, List<string> arrows)
+    private static void WalkArrows(object excel, object originRange, string originAddress, List<string> arrows)
     {
         var originNorm = DependentsTree.NormalizeAddress(originAddress, originAddress);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var duplicateArrows = 0;
+        var source = originRange;
         for (var arrow = 1; arrow <= 1024; arrow++)
         {
             var added = 0;
@@ -160,17 +162,27 @@ internal static class ExcelDependentsProbe
                 object? dest;
                 try
                 {
-                    var cell = RangeOf(excel, originAddress);
-                    if (cell == null) return;
-                    // NavigateArrow follows arrows on the active cell. Reselect the
-                    // source before each arrow; ScreenUpdating is off for this walk.
-                    try { Invoke(cell, "Select"); } catch { /* the range call below still addresses it */ }
-                    dest = Invoke(cell, "NavigateArrow", false, arrow, link);
+                    dest = Invoke(source, "NavigateArrow", false, arrow, link);
                 }
                 catch
                 {
-                    if (link == 1) return;
-                    break;
+                    var refreshed = RangeOf(excel, originAddress);
+                    if (refreshed == null)
+                    {
+                        if (link == 1) return;
+                        break;
+                    }
+
+                    source = refreshed;
+                    try
+                    {
+                        dest = Invoke(source, "NavigateArrow", false, arrow, link);
+                    }
+                    catch
+                    {
+                        if (link == 1) return;
+                        break;
+                    }
                 }
 
                 if (dest == null)
@@ -180,7 +192,7 @@ internal static class ExcelDependentsProbe
                 }
 
                 linkWorked = true;
-                foreach (var piece in Expand(dest))
+                foreach (var piece in DescribeTarget(excel, dest))
                 {
                     var norm = DependentsTree.NormalizeAddress(piece, originAddress);
                     if (string.IsNullOrEmpty(norm) ||
@@ -210,7 +222,50 @@ internal static class ExcelDependentsProbe
         }
     }
 
-    private static List<string> Expand(object range)
+    private static List<string> DescribeTarget(object excel, object dest)
+    {
+        var pieces = ListAddresses(dest);
+        if (pieces.Count != 1 || !IsOneCell(pieces[0])) return pieces;
+
+        try
+        {
+            var selection = Get(excel, "Selection");
+            if (selection == null) return pieces;
+            var selected = ListAddresses(selection);
+            if (selected.Count != 1) return pieces;
+            var chosen = DependentsTree.NormalizeAddress(selected[0], pieces[0]);
+            var cell = DependentsTree.NormalizeAddress(pieces[0], pieces[0]);
+            if (string.IsNullOrEmpty(chosen) || !DependentsTree.ContainsRange(chosen, cell)) return pieces;
+            if (!IsSingleRowOrColumn(chosen)) return pieces;
+            return new List<string> { selected[0] };
+        }
+        catch
+        {
+            return pieces;
+        }
+    }
+
+    private static bool IsOneCell(string address)
+    {
+        var normalized = DependentsTree.NormalizeAddress(address, address);
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(string.IsNullOrEmpty(normalized) ? address : normalized);
+        var range = (parsed?.RangeAddress ?? address).Replace("$", "");
+        return range.IndexOf(':') < 0 && TraceUtils.ParseCellAddress(range) != null;
+    }
+
+    private static bool IsSingleRowOrColumn(string address)
+    {
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
+        var range = (parsed?.RangeAddress ?? address).Replace("$", "");
+        var parts = range.Split(':');
+        if (parts.Length != 2) return false;
+        var start = TraceUtils.ParseCellAddress(parts[0]);
+        var end = TraceUtils.ParseCellAddress(parts[1]);
+        if (start == null || end == null) return false;
+        return start.Value.Row == end.Value.Row || start.Value.Col == end.Value.Col;
+    }
+
+    private static List<string> ListAddresses(object range)
     {
         try
         {
@@ -225,8 +280,8 @@ internal static class ExcelDependentsProbe
                     {
                         var area = Item(areas, i);
                         if (area == null) continue;
-                        var formatted = FormatRange(area);
-                        if (!string.IsNullOrEmpty(formatted)) pieces.Add(formatted);
+                        var text = AddressOf(area);
+                        if (!string.IsNullOrEmpty(text)) pieces.Add(text);
                     }
 
                     if (pieces.Count > 0) return pieces;
@@ -235,13 +290,15 @@ internal static class ExcelDependentsProbe
         }
         catch
         {
-            // Fall through to the range's own rectangle.
+            // Fall through to the range address.
         }
 
+        var single = AddressOf(range);
+        if (!string.IsNullOrEmpty(single)) return new List<string> { single };
         try
         {
-            var single = FormatRange(range);
-            if (!string.IsNullOrEmpty(single)) return new List<string> { single };
+            var formatted = FormatRange(range);
+            if (!string.IsNullOrEmpty(formatted)) return new List<string> { formatted };
         }
         catch
         {
@@ -249,6 +306,62 @@ internal static class ExcelDependentsProbe
         }
 
         return new List<string>();
+    }
+
+    private static string AddressOf(object range)
+    {
+        string? text = null;
+        try
+        {
+            text = InvokeAddress(range, external: true);
+        }
+        catch
+        {
+            try { text = InvokeAddress(range, external: false); }
+            catch { /* FormatRange is the fallback */ }
+        }
+
+        if (string.IsNullOrWhiteSpace(text)) return "";
+        if (TraceUtils.ParseWorksheetScopedAddress(text!) != null) return text!.Trim();
+
+        var sheet = "";
+        try
+        {
+            var worksheet = Get(range, "Worksheet");
+            if (worksheet != null) sheet = Get(worksheet, "Name") as string ?? "";
+        }
+        catch
+        {
+            sheet = "";
+        }
+
+        if (string.IsNullOrEmpty(sheet)) return text!.Trim();
+        return "'" + sheet.Replace("'", "''") + "'!" + text!.Trim();
+    }
+
+    private static string? InvokeAddress(object range, bool external)
+    {
+        var property = BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance;
+        try
+        {
+            var value = range.GetType().InvokeMember(
+                "Address",
+                property,
+                null,
+                range,
+                new object[] { false, false, 1, external, Missing.Value });
+            return value as string;
+        }
+        catch
+        {
+            var value = range.GetType().InvokeMember(
+                "Address",
+                BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance,
+                null,
+                range,
+                new object[] { false, false, 1, external });
+            return value as string;
+        }
     }
 
     private static string FormatRange(object? range)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace ArixcelExplorer.Core.Tracing;
 
@@ -18,9 +19,9 @@ public sealed class DependentsTreeNode
 
 /// <summary>
 /// Arixcel's Dependents window is a tree under the source cell. Each child is one
-/// tracer-arrow target (G48:G53, or a single cell, or another sheet's range).
-/// Adjacent cells are not merged just because they touch: G97, G98, and G99:G100
-/// stay separate when Excel reports them as separate targets.
+/// reported target: a row span such as D60:J60, a vertical fill such as G48:G53,
+/// or a single cell. A reported row replaces the cells inside it. Separate targets
+/// that only share a column, such as G97, G98, and G99:G100, stay separate.
 /// </summary>
 public static class DependentsTree
 {
@@ -31,25 +32,29 @@ public static class DependentsTree
         bool groupBySheet)
     {
         var origin = NormalizeAddress(originAddress, originAddress);
-        var leaves = new List<DependentsTreeNode>();
+        var prepared = new List<string>();
         if (entries != null)
         {
             foreach (var entry in entries)
             {
                 var address = NormalizeAddress(entry?.Address, originAddress);
-                if (string.IsNullOrEmpty(address)) continue;
-                if (SameRange(address, origin)) continue;
-                if (ContainsAddress(leaves, address)) continue;
-
-                leaves.Add(new DependentsTreeNode
-                {
-                    Address = address,
-                    Display = DisplayFor(address, originAddress, forceShort: false),
-                    Value = entry?.Value ?? "",
-                    SheetName = SheetOf(address),
-                    IsExpanded = true
-                });
+                if (string.IsNullOrEmpty(address) || SameRange(address, origin)) continue;
+                prepared.Add(address);
             }
+        }
+
+        prepared = CoalesceAddresses(prepared);
+        var leaves = new List<DependentsTreeNode>();
+        foreach (var address in prepared)
+        {
+            leaves.Add(new DependentsTreeNode
+            {
+                Address = address,
+                Display = DisplayFor(address, originAddress, forceShort: false),
+                Value = ValueFor(entries, address),
+                SheetName = SheetOf(address),
+                IsExpanded = true
+            });
         }
 
         var root = new DependentsTreeNode
@@ -98,7 +103,9 @@ public static class DependentsTree
                 groups.Add(group);
             }
 
-            leaf.Display = DisplayFor(leaf.Address, originAddress, forceShort: true);
+            // Grouped rows stay sheet-qualified, matching Arixcel's
+            // 'Summary (Instit)'!D60:J60 under the sheet node.
+            leaf.Display = leaf.Address;
             group.Children.Add(leaf);
             group.Count = group.Children.Count;
         }
@@ -109,9 +116,9 @@ public static class DependentsTree
 
     /// <summary>
     /// Merge tracer-arrow targets with DirectDependents areas.
-    /// Arrow splits win: a geometric block that would swallow G97, G98, and G99:G100
-    /// is dropped. Areas only fill ranges the arrows did not already cover.
-    /// Other-sheet targets are kept after the same-sheet list.
+    /// A reported row such as D60:J60 replaces single cells inside it.
+    /// A block that would swallow distinct targets (G97:G100 over G99:G100) does not.
+    /// Other-sheet targets stay after the same-sheet list.
     /// </summary>
     public static IReadOnlyList<DependentEntry> Combine(
         string? originAddress,
@@ -155,9 +162,10 @@ public static class DependentsTree
 
         var ordered = new List<string>(same);
         AddFiltered(ordered, other);
+        var coalesced = CoalesceAddresses(ordered);
 
-        var result = new List<DependentEntry>(ordered.Count);
-        foreach (var address in ordered)
+        var result = new List<DependentEntry>(coalesced.Count);
+        foreach (var address in coalesced)
         {
             result.Add(new DependentEntry { Address = address, Count = 1 });
         }
@@ -236,25 +244,220 @@ public static class DependentsTree
             var skip = false;
             foreach (var existing in target)
             {
-                if (SameRange(existing, address) || ContainsRange(existing, address) || ContainsRange(address, existing))
-                {
-                    skip = true;
-                    break;
-                }
+            // Keep a wider range even when smaller cells are already listed.
+            // CoalesceAddresses decides which one survives.
+            if (SameRange(existing, address) || ContainsRange(existing, address))
+            {
+                skip = true;
+                break;
+            }
             }
 
             if (!skip) target.Add(address);
         }
     }
 
-    private static bool ContainsAddress(List<DependentsTreeNode> leaves, string address)
+    private static string ValueFor(IEnumerable<DependentEntry>? entries, string address)
     {
-        foreach (var leaf in leaves)
+        if (entries == null) return "";
+        foreach (var entry in entries)
         {
-            if (SameRange(leaf.Address, address)) return true;
+            if (entry == null) continue;
+            if (SameRange(entry.Address, address)) return entry.Value ?? "";
         }
 
-        return false;
+        return "";
+    }
+
+    private static List<string> CoalesceAddresses(List<string> incoming)
+    {
+        var items = new List<string>();
+        foreach (var address in incoming)
+        {
+            if (string.IsNullOrEmpty(address)) continue;
+            var duplicate = false;
+            foreach (var existing in items)
+            {
+                if (SameRange(existing, address))
+                {
+                    duplicate = true;
+                    break;
+                }
+            }
+
+            if (!duplicate) items.Add(address);
+        }
+
+        RemoveWhere(items, address =>
+        {
+            if (IsSingleRow(address)) return false;
+            foreach (var other in items)
+            {
+                if (SameRange(address, other) || IsSingleCell(other)) continue;
+                if (ContainsRange(address, other)) return true;
+            }
+
+            return false;
+        });
+
+        RemoveWhere(items, address =>
+        {
+            if (!IsSingleCell(address)) return false;
+            foreach (var other in items)
+            {
+                if (ContainsRange(other, address)) return true;
+            }
+
+            return false;
+        });
+
+        RemoveWhere(items, address =>
+        {
+            foreach (var other in items)
+            {
+                if (SameRange(address, other) || !IsSingleRow(other)) continue;
+                if (ContainsRange(other, address)) return true;
+            }
+
+            return false;
+        });
+
+        RemoveWhere(items, address =>
+        {
+            if (IsSingleRow(address)) return false;
+            foreach (var other in items)
+            {
+                if (!IsSingleRow(other) || IsSingleCell(other)) continue;
+                if (Intersects(address, other)) return true;
+            }
+
+            return false;
+        });
+
+        return MergeTouchingRows(items);
+    }
+
+    private static void RemoveWhere(List<string> items, Func<string, bool> predicate)
+    {
+        for (var i = items.Count - 1; i >= 0; i--)
+        {
+            if (predicate(items[i])) items.RemoveAt(i);
+        }
+    }
+
+    private static List<string> MergeTouchingRows(List<string> items)
+    {
+        var placed = new List<RowPiece>();
+        var buckets = new Dictionary<string, List<RowPiece>>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (!TryBounds(items[i], out var sheet, out var minRow, out var maxRow, out var minCol, out var maxCol) ||
+                minRow != maxRow)
+            {
+                placed.Add(new RowPiece { Index = i, Address = items[i] });
+                continue;
+            }
+
+            var key = sheet + "\n" + minRow.ToString(CultureInfo.InvariantCulture);
+            if (!buckets.TryGetValue(key, out var bucket))
+            {
+                bucket = new List<RowPiece>();
+                buckets[key] = bucket;
+            }
+
+            bucket.Add(new RowPiece
+            {
+                Index = i,
+                Sheet = sheet,
+                Row = minRow,
+                MinCol = minCol,
+                MaxCol = maxCol
+            });
+        }
+
+        foreach (var bucket in buckets.Values)
+        {
+            bucket.Sort((left, right) => left.MinCol.CompareTo(right.MinCol));
+            var current = bucket[0];
+            for (var n = 1; n < bucket.Count; n++)
+            {
+                var next = bucket[n];
+                if (next.MinCol <= current.MaxCol + 1)
+                {
+                    if (next.MaxCol > current.MaxCol) current.MaxCol = next.MaxCol;
+                    if (next.Index < current.Index) current.Index = next.Index;
+                    continue;
+                }
+
+                placed.Add(FinishRow(current));
+                current = next;
+            }
+
+            placed.Add(FinishRow(current));
+        }
+
+        placed.Sort((left, right) => left.Index.CompareTo(right.Index));
+        var result = new List<string>(placed.Count);
+        foreach (var piece in placed)
+        {
+            if (!string.IsNullOrEmpty(piece.Address)) result.Add(piece.Address);
+        }
+
+        return result;
+    }
+
+    private static RowPiece FinishRow(RowPiece piece)
+    {
+        piece.Address = FormatA1(piece.Sheet, piece.Row, piece.MinCol, piece.Row, piece.MaxCol);
+        return piece;
+    }
+
+    private static string FormatA1(string sheet, int row, int startColumn, int endRow, int endColumn)
+    {
+        var start = TraceUtils.ColumnLetters(startColumn) + (row + 1).ToString(CultureInfo.InvariantCulture);
+        var end = TraceUtils.ColumnLetters(endColumn) + (endRow + 1).ToString(CultureInfo.InvariantCulture);
+        var a1 = start == end ? start : start + ":" + end;
+        if (string.IsNullOrEmpty(sheet)) return a1;
+        return QuoteSheet(sheet) + "!" + a1;
+    }
+
+    private static bool IsSingleCell(string address)
+    {
+        if (!TryBounds(address, out _, out var minRow, out var maxRow, out var minCol, out var maxCol)) return false;
+        return minRow == maxRow && minCol == maxCol;
+    }
+
+    private static bool IsSingleRow(string address)
+    {
+        if (!TryBounds(address, out _, out var minRow, out var maxRow, out _, out _)) return false;
+        return minRow == maxRow;
+    }
+
+    private static bool Intersects(string left, string right)
+    {
+        if (!TryBounds(left, out var leftSheet, out var leftMinRow, out var leftMaxRow, out var leftMinCol, out var leftMaxCol))
+        {
+            return false;
+        }
+
+        if (!TryBounds(right, out var rightSheet, out var rightMinRow, out var rightMaxRow, out var rightMinCol, out var rightMaxCol))
+        {
+            return false;
+        }
+
+        if (!SameSheet(leftSheet, rightSheet)) return false;
+        return leftMinRow <= rightMaxRow && rightMinRow <= leftMaxRow &&
+               leftMinCol <= rightMaxCol && rightMinCol <= leftMaxCol;
+    }
+
+    private sealed class RowPiece
+    {
+        public int Index { get; set; }
+        public string Address { get; set; } = "";
+        public string Sheet { get; set; } = "";
+        public int Row { get; set; }
+        public int MinCol { get; set; }
+        public int MaxCol { get; set; }
     }
 
     private static string DisplayFor(string? address, string? originAddress, bool forceShort)
