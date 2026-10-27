@@ -25,7 +25,10 @@ public static class AddInCoordinator
     private static UtilityShortcutService? _utilityService;
     private static HighlightService? _highlightService;
     private static readonly ExplorerSession Session = new();
+    private static readonly ExplorerHistory History = new();
     private static ArixcelOptions _options = new();
+    private static bool _suppressReturn;
+    private static int _suppressReturnUntil;
     private static bool _sessionWired;
     private static ExcelArrowHook? _arrowHook;
     private static Dispatcher? _uiDispatcher;
@@ -120,6 +123,7 @@ public static class AddInCoordinator
         var origin = selected.Count > 0
             ? ToOrigin(selected[0])
             : CaptureActiveOrigin();
+        History.Record(origin.OriginAddress);
         var ownerId = Guid.NewGuid().ToString("N");
         var vm = new DependentsViewModel();
         DependentsWindow? window = null;
@@ -181,6 +185,14 @@ public static class AddInCoordinator
             {
                 // Refresh is best-effort.
             }
+        };
+        vm.GoToExcelRequested += () =>
+        {
+            var row = vm.SelectedRow;
+            var address = row != null && !string.IsNullOrWhiteSpace(row.Address)
+                ? row.Address
+                : origin.OriginAddress;
+            GoToExcel(address);
         };
         var originValueText = selected.Count == 1
             ? TraceUtils.FormatTraceValue(selected[0].Value)
@@ -258,15 +270,66 @@ public static class AddInCoordinator
     public static void ReturnToOrigin()
     {
         EnsureInitialized();
+        if (IsReturnSuppressed()) return;
         if (Session.HasOpenWindows)
         {
             Session.ActivateLatest();
             return;
         }
 
-        if (Session.FirstOrigin != null)
+        var previous = History.Back();
+        if (!string.IsNullOrWhiteSpace(previous))
         {
-            _traceService!.NavigateToAddress(Session.FirstOrigin.OriginAddress);
+            _traceService!.NavigateToAddress(previous);
+        }
+    }
+
+    private static void GoToExcel(string? address)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(address))
+            {
+                _traceService?.NavigateToAddress(address, stealFocus: true);
+            }
+        }
+        catch
+        {
+            // Selecting the cell is optional; Excel still needs focus.
+        }
+
+        _suppressReturn = true;
+        _suppressReturnUntil = Environment.TickCount + 400;
+        ActivateExcel();
+    }
+
+    private static bool IsReturnSuppressed()
+    {
+        if (!_suppressReturn) return false;
+        if (unchecked(Environment.TickCount - _suppressReturnUntil) >= 0)
+        {
+            _suppressReturn = false;
+            return false;
+        }
+
+        return true;
+    }
+
+    private static void ActivateExcel()
+    {
+        try
+        {
+            if (_app == null) return;
+            _app.ActiveWindow?.Activate();
+            var hwnd = new IntPtr(_app.Hwnd);
+            if (hwnd != IntPtr.Zero)
+            {
+                SetForegroundWindow(hwnd);
+            }
+        }
+        catch
+        {
+            // Focus handoff is best-effort.
         }
     }
 
@@ -278,6 +341,7 @@ public static class AddInCoordinator
         var cell = _app!.ActiveCell;
         var formula = cell.HasFormula ? cell.Formula?.ToString() ?? "" : "";
         var tree = _formulaService!.BuildExplorerTree(cell);
+        History.Record(origin.OriginAddress);
         var ownerId = Guid.NewGuid().ToString("N");
 
         var vm = new ExplorerViewModel
@@ -310,40 +374,117 @@ public static class AddInCoordinator
                 window.RestoreKeyboardFocus();
             }), System.Windows.Threading.DispatcherPriority.Input);
         };
+        void ExploreAnchor()
+        {
+            var address = vm.SelectedAnchorAddress();
+            if (!string.IsNullOrWhiteSpace(address))
+            {
+                var hwnd = window?.WindowHandle ?? IntPtr.Zero;
+                _traceService!.NavigateToAddress(address, stealFocus: false, reclaimHwnd: hwnd);
+            }
+
+            ShowExplorerForActiveCell(CaptureActiveOrigin());
+        }
+
         vm.DrillRequested += () =>
         {
             try
             {
-                ShowExplorerForActiveCell(CaptureActiveOrigin());
+                ExploreAnchor();
             }
             catch (Exception ex)
             {
                 ShowCallError("OpenExplorer", ex);
             }
         };
-        vm.RefreshRequested += () =>
+        vm.ExplorePrecedentsRequested += () =>
+        {
+            try
+            {
+                ExploreAnchor();
+            }
+            catch (Exception ex)
+            {
+                ShowCallError("OpenExplorer", ex);
+            }
+        };
+        vm.ExploreDependentsRequested += () =>
+        {
+            try
+            {
+                var anchor = CellFromAddress(vm.SelectedAnchorAddress());
+                if (anchor != null)
+                {
+                    OpenDependentsCore(new[] { anchor });
+                }
+            }
+            catch (Exception ex)
+            {
+                ShowCallError("OpenDependents", ex);
+            }
+        };
+        vm.GoToExcelRequested += () => GoToExcel(vm.SelectedNavigationAddress());
+        vm.FormulaApplyRequested += formula =>
         {
             try
             {
                 var range = RangeFromAddress(origin.OriginAddress);
                 if (range == null) return;
-                var refreshedFormula = range.HasFormula ? range.Formula?.ToString() ?? "" : "";
-                vm.RootAddress = origin.OriginAddress;
-                vm.LoadTree(_formulaService.BuildExplorerTree(range), refreshedFormula);
-                _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+                var text = (formula ?? "").Trim();
+                if (text.Length == 0) return;
+                if (!text.StartsWith("=", StringComparison.Ordinal) &&
+                    !text.StartsWith("{=", StringComparison.Ordinal))
+                {
+                    text = "=" + text;
+                }
+
+                range.Formula = text;
+                ReloadExplorerFormula();
+            }
+            catch (Exception ex)
+            {
+                ShowCallError("Edit formula", ex);
+            }
+        };
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ExplorerViewModel.IsEditingFormula))
+            {
+                Session.SuspendExcelKeys = vm.IsEditingFormula;
+            }
+        };
+        vm.RefreshRequested += () =>
+        {
+            try
+            {
+                ReloadExplorerFormula();
             }
             catch
             {
                 // Refresh is best-effort.
             }
         };
+
+        void ReloadExplorerFormula()
+        {
+            var range = RangeFromAddress(origin.OriginAddress);
+            if (range == null) return;
+            var refreshedFormula = range.HasFormula ? range.Formula?.ToString() ?? "" : "";
+            vm.RootAddress = origin.OriginAddress;
+            vm.LoadTree(_formulaService.BuildExplorerTree(range), refreshedFormula);
+            _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
+        }
         vm.LoadTree(tree, formula);
 
         window = new ExplorerWindow(vm, _options.CloseBehavior);
         Session.Track(window, origin, ownerId);
         ShowModeless(window, _options.ExplorerWindow, ExplorerChrome.ExplorerWidth, ExplorerChrome.ExplorerHeight);
         RefreshArrowHook();
-        window.Closed += (_, _) => PersistWindowBounds(window, dependents: false);
+        window.Closed += (_, _) =>
+        {
+            if (vm.IsEditingFormula) Session.SuspendExcelKeys = false;
+            PersistWindowBounds(window, dependents: false);
+        };
         try
         {
             _highlightService!.Apply(ownerId, origin.OriginAddress, _options.OriginHighlight);
@@ -440,8 +581,16 @@ public static class AddInCoordinator
 
     private static void ApplyPlacement(Window window, WindowPlacement placement, double defaultWidth, double defaultHeight)
     {
-        window.Width = placement.Width > 0 ? placement.Width : defaultWidth;
-        window.Height = placement.Height > 0 ? placement.Height : defaultHeight;
+        var savedWidth = placement.Width;
+        var savedHeight = placement.Height;
+        if (ExplorerChrome.IsLegacyCompact(savedWidth, savedHeight))
+        {
+            savedWidth = 0;
+            savedHeight = 0;
+        }
+
+        window.Width = savedWidth > 0 ? savedWidth : defaultWidth;
+        window.Height = savedHeight > 0 ? savedHeight : defaultHeight;
         window.WindowStartupLocation = WindowStartupLocation.Manual;
 
         if (placement.HasPosition && IsOnScreen(placement))
@@ -774,6 +923,9 @@ public static class AddInCoordinator
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hWnd);

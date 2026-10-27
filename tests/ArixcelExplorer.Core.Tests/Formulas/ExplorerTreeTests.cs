@@ -178,6 +178,7 @@ public sealed class ExplorerTreeTests
             new[]
             {
                 "I36",
+                "$D$8/4*$D$7*(E31>=$D$16)*(E31<=$D$17)",
                 "$D$8",
                 "4",
                 "$D$7",
@@ -195,6 +196,78 @@ public sealed class ExplorerTreeTests
         Assert.Equal("'Net Investor Returns (Insti)'!$D$17", d17.Location);
         Assert.Equal("$D$17", formula.Substring(d17.SourceStart, d17.SourceLength));
         Assert.Equal("D17", TraceUtils.FormatExplorerLocation(d17.Location, origin));
+    }
+
+    [Fact]
+    public void Parse_keeps_addition_expression_between_origin_and_references()
+    {
+        const string formula = "=D4+E4";
+        const string origin = "'Sheet1'!E6";
+        var tree = FormulaAstParser.Parse(formula, origin, "6,00");
+        var rows = FormulaAstParser.FlattenVisible(tree);
+        var labels = rows.Select(DisplayLabel).ToArray();
+
+        Assert.Equal(new[] { "E6", "D4+E4", "D4", "E4" }, labels);
+        Assert.Equal(FormulaNodeKind.Operator, rows[1].Kind);
+
+        var navigation = ExplorerLocations.NavigationAddress(rows[1], origin);
+        Assert.Equal("'Sheet1'!D4:E4", navigation);
+        Assert.Equal("D4:E4", TraceUtils.FormatExplorerLocation(navigation, origin));
+        Assert.Equal(1, ExplorerLocations.OpeningSelectionIndex(rows.Count));
+        Assert.Equal("6", ExplorerLocations.DisplayValue(rows[1], tree));
+        Assert.Equal("6", ExplorerLocations.DisplayValue(rows[0], tree));
+        Assert.Equal("D4", formula.Substring(rows[2].SourceStart, rows[2].SourceLength));
+        Assert.Equal("E4", formula.Substring(rows[3].SourceStart, rows[3].SourceLength));
+    }
+
+    [Fact]
+    public void FormatTraceValue_uses_general_format_without_trailing_zeros()
+    {
+        Assert.Equal("6", TraceUtils.FormatTraceValue(6d));
+        Assert.Equal("6", TraceUtils.FormatTraceValue(6.00m));
+        Assert.Equal("2", TraceUtils.FormatTraceValue(2f));
+        Assert.Equal("6", TraceUtils.FormatTraceValue("6,00"));
+        Assert.Equal("6", TraceUtils.FormatTraceValue("6.00"));
+        Assert.Equal("6,5", TraceUtils.NormalizeNumericText("6,50"));
+        Assert.Equal("hello", TraceUtils.FormatTraceValue("hello"));
+        var oneAndAHalf = TraceUtils.FormatTraceValue(2.5d);
+        Assert.True(oneAndAHalf is "2.5" or "2,5", oneAndAHalf);
+    }
+
+    [Fact]
+    public void BoundingAddress_unions_same_sheet_cells()
+    {
+        Assert.Equal("'S'!D4:E4", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'S'!E4" }));
+        Assert.Equal("'S'!D4", TraceUtils.BoundingAddress(new[] { "'S'!$D$4" }));
+        Assert.Equal("", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'Other'!E4" }));
+    }
+
+    [Fact]
+    public void OpeningSelectionIndex_highlights_the_expression_row()
+    {
+        Assert.Equal(1, ExplorerLocations.OpeningSelectionIndex(4));
+        Assert.Equal(0, ExplorerLocations.OpeningSelectionIndex(1));
+        Assert.Equal(0, ExplorerLocations.OpeningSelectionIndex(0));
+    }
+
+    [Fact]
+    public void DependentsStatus_reports_the_empty_state_arixcel_uses()
+    {
+        Assert.Equal("No direct dependents found", ExplorerLocations.DependentsStatus(0));
+        Assert.Equal("1 direct dependent", ExplorerLocations.DependentsStatus(1));
+        Assert.Equal("3 direct dependents", ExplorerLocations.DependentsStatus(3));
+    }
+
+    [Fact]
+    public void ExplorerHistory_walks_back_and_wraps_after_the_oldest()
+    {
+        var history = new ExplorerHistory();
+        history.Record("'S'!E6");
+        history.Record("'S'!D4");
+        history.Record("'S'!E4");
+        Assert.Equal("'S'!D4", history.Back());
+        Assert.Equal("'S'!E6", history.Back());
+        Assert.Equal("'S'!E4", history.Back());
     }
 
     [Fact]

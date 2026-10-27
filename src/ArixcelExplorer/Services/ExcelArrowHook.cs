@@ -46,6 +46,11 @@ internal sealed class ExcelArrowHook : IDisposable
     {
         try
         {
+            if (_session.SuspendExcelKeys)
+            {
+                return CallNextHookEx(_hook, nCode, wParam, lParam);
+            }
+
             if (nCode == HcAction && _session.HasOpenWindows && !IsKeyUp(lParam))
             {
                 var key = KeyFromVirtualKey((int)wParam);

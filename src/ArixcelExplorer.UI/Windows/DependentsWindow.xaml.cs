@@ -75,6 +75,9 @@ public partial class DependentsWindow : Window
             case Key.Down:
                 _viewModel.MoveSelection(1);
                 return true;
+            case Key.Home:
+                _viewModel.SelectOrigin();
+                return true;
             case Key.Enter:
                 _viewModel.RequestKeepClose();
                 return true;
@@ -99,9 +102,14 @@ public partial class DependentsWindow : Window
         {
             case Key.Up:
             case Key.Down:
+            case Key.Home:
             case Key.Enter:
             case Key.Escape:
                 e.Handled = TryHandleExplorerKey(e.Key);
+                break;
+            case Key.Back when Keyboard.Modifiers == ModifierKeys.Control:
+                _viewModel.RequestGoToExcel();
+                e.Handled = true;
                 break;
             case Key.Q when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift):
                 _viewModel.HandleCtrlShiftQ();

@@ -70,6 +70,7 @@ public static class FormulaAstParser
         {
             var (node, _) = ParseComparison(normalized, 0, root.Id, cellAddress);
             AttachTopLevel(root, node);
+            ExtendTopLevelExpression(root, normalized);
             QualifyReferences(root, cellAddress);
         }
         catch
@@ -165,19 +166,20 @@ public static class FormulaAstParser
 
     private static void AttachTopLevel(FormulaAstNode root, FormulaAstNode node)
     {
-        if (node.FlattenIntoParent && node.Children.Count > 0)
-        {
-            foreach (var child in node.Children)
-            {
-                child.ParentId = root.Id;
-                root.Children.Add(child);
-            }
-
-            return;
-        }
-
+        // Arixcel keeps the arithmetic expression (D4+E4) as its own row under the
+        // origin cell. FlattenIntoParent used to splice those children onto the root.
+        node.FlattenIntoParent = false;
         node.ParentId = root.Id;
         root.Children.Add(node);
+    }
+
+    private static void ExtendTopLevelExpression(FormulaAstNode root, string normalized)
+    {
+        if (root.Children.Count != 1 || root.Children[0].Kind != FormulaNodeKind.Operator) return;
+        var child = root.Children[0];
+        if (child.SourceStart != 0 || child.SourceLength >= normalized.Length) return;
+        child.SourceLength = normalized.Length;
+        child.Label = normalized;
     }
 
     private static void QualifyReferences(FormulaAstNode node, string cellAddress)

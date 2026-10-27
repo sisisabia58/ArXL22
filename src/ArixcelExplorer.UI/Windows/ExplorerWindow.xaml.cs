@@ -5,15 +5,23 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using ArixcelExplorer.Core.Formulas;
 using ArixcelExplorer.Core.Settings;
+using ArixcelExplorer.Core.Tracing;
 using ArixcelExplorer.UI.ViewModels;
 
 namespace ArixcelExplorer.UI.Windows;
 
 public partial class ExplorerWindow : Window
 {
-    private static readonly SolidColorBrush FormulaHighlightBrush = new(Color.FromRgb(0x7F, 0xDB, 0xFF));
+    private static readonly SolidColorBrush FormulaLinkBrush = Freeze(Color.FromRgb(0x00, 0x00, 0xFF));
+    private static readonly SolidColorBrush FormulaTextBrush = Freeze(Color.FromRgb(0x1A, 0x1A, 0x1A));
+
+    private static SolidColorBrush Freeze(Color color)
+    {
+        var brush = new SolidColorBrush(color);
+        brush.Freeze();
+        return brush;
+    }
 
     private readonly ExplorerViewModel _viewModel;
     private readonly ExplorerCloseBehavior _closeBehavior;
@@ -38,11 +46,20 @@ public partial class ExplorerWindow : Window
         };
         _viewModel.PropertyChanged += (_, args) =>
         {
+            if (args.PropertyName == nameof(ExplorerViewModel.IsEditingFormula))
+            {
+                ApplyFormulaEditChrome();
+            }
+
             if (args.PropertyName == nameof(ExplorerViewModel.SelectedIndex) ||
                 args.PropertyName == nameof(ExplorerViewModel.FormulaText))
             {
                 SyncListSelection();
-                PaintFormula();
+                if (!_viewModel.IsEditingFormula)
+                {
+                    PaintFormula();
+                }
+
                 if (TreeGrid.SelectedItem != null)
                 {
                     TreeGrid.ScrollIntoView(TreeGrid.SelectedItem);
@@ -122,43 +139,77 @@ public partial class ExplorerWindow : Window
     private void PaintFormula()
     {
         var text = _viewModel.FormulaText ?? "";
-        var highlights = _viewModel.SelectedFormulaSpans();
+        var sheet = TraceUtils.ParseWorksheetScopedAddress(_viewModel.RootAddress)?.WorksheetName ?? "";
+        var links = FormulaTokenHits.Spans(text, sheet);
         var paragraph = new Paragraph { Margin = new Thickness(0) };
         var index = 0;
         while (index < text.Length)
         {
-            var span = highlights.FirstOrDefault(item => index >= item.Start && index < item.Start + item.Length);
-            if (span != null && span.Length > 0)
+            var link = (FormulaTokenSpan?)null;
+            foreach (var candidate in links)
             {
-                var end = Math.Min(text.Length, span.Start + span.Length);
+                if (index >= candidate.Start && index < candidate.Start + candidate.Length && candidate.Length > 0)
+                {
+                    link = candidate;
+                    break;
+                }
+            }
+
+            if (link != null)
+            {
+                var end = Math.Min(text.Length, link.Start + link.Length);
                 paragraph.Inlines.Add(new Run(text.Substring(index, end - index))
                 {
-                    Background = FormulaHighlightBrush
+                    Foreground = FormulaLinkBrush,
+                    TextDecorations = TextDecorations.Underline
                 });
                 index = end;
                 continue;
             }
 
             var next = text.Length;
-            foreach (var item in highlights)
+            foreach (var candidate in links)
             {
-                if (item.Start > index && item.Start < next)
+                if (candidate.Start > index && candidate.Start < next)
                 {
-                    next = item.Start;
+                    next = candidate.Start;
                 }
             }
 
-            paragraph.Inlines.Add(new Run(text.Substring(index, next - index)));
+            paragraph.Inlines.Add(new Run(text.Substring(index, next - index))
+            {
+                Foreground = FormulaTextBrush
+            });
             index = next;
         }
 
         if (paragraph.Inlines.Count == 0)
         {
-            paragraph.Inlines.Add(new Run(text));
+            paragraph.Inlines.Add(new Run(text) { Foreground = FormulaTextBrush });
         }
 
+        FormulaBox.Document.PagePadding = new Thickness(0);
         FormulaBox.Document.Blocks.Clear();
         FormulaBox.Document.Blocks.Add(paragraph);
+    }
+
+    private void ApplyFormulaEditChrome()
+    {
+        if (_viewModel.IsEditingFormula)
+        {
+            FormulaBox.Visibility = Visibility.Collapsed;
+            FormulaEditor.Visibility = Visibility.Visible;
+            var seed = _viewModel.FormulaEditSeed ?? "";
+            FormulaEditor.Text = (_viewModel.FormulaText ?? "") + seed;
+            FormulaEditor.Focus();
+            FormulaEditor.CaretIndex = FormulaEditor.Text.Length;
+            return;
+        }
+
+        FormulaEditor.Visibility = Visibility.Collapsed;
+        FormulaBox.Visibility = Visibility.Visible;
+        PaintFormula();
+        RestoreKeyboardFocus();
     }
 
     private static int CharIndexFromPoint(RichTextBox box, Point point)
@@ -188,6 +239,23 @@ public partial class ExplorerWindow : Window
 
     public bool TryHandleExplorerKey(Key key)
     {
+        if (_viewModel.IsEditingFormula)
+        {
+            if (key == Key.Enter)
+            {
+                _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+                return true;
+            }
+
+            if (key == Key.Escape)
+            {
+                _viewModel.CancelFormulaEdit();
+                return true;
+            }
+
+            return false;
+        }
+
         switch (key)
         {
             case Key.Up:
@@ -215,9 +283,24 @@ public partial class ExplorerWindow : Window
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.System && e.SystemKey == Key.R)
+        if (_viewModel.IsEditingFormula)
         {
-            _viewModel.RequestRefresh();
+            if (e.Key == Key.Enter)
+            {
+                _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape)
+            {
+                _viewModel.CancelFormulaEdit();
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (e.Key == Key.System && HandleAltKey(e.SystemKey))
+        {
             e.Handled = true;
             return;
         }
@@ -232,15 +315,116 @@ public partial class ExplorerWindow : Window
             case Key.Escape:
                 e.Handled = TryHandleExplorerKey(e.Key);
                 break;
+            case Key.F2:
+                _viewModel.BeginFormulaEdit();
+                e.Handled = true;
+                break;
+            case Key.Back when Keyboard.Modifiers == ModifierKeys.Control:
+                _viewModel.RequestGoToExcel();
+                e.Handled = true;
+                break;
             case Key.Q when Keyboard.Modifiers == ModifierKeys.Control:
                 _viewModel.HandleCtrlQ();
+                e.Handled = true;
+                break;
+            case Key.Q when Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift):
+                _viewModel.RequestExploreDependents();
+                e.Handled = true;
+                break;
+            case Key.W when Keyboard.Modifiers == ModifierKeys.Control:
+                _viewModel.RequestExplorePrecedents();
+                e.Handled = true;
+                break;
+            case Key.L when Keyboard.Modifiers == ModifierKeys.Control:
+                _viewModel.RequestExplorePrecedents();
                 e.Handled = true;
                 break;
             case Key.R when Keyboard.Modifiers == ModifierKeys.Alt:
                 _viewModel.RequestRefresh();
                 e.Handled = true;
                 break;
+            case Key.S when Keyboard.Modifiers == ModifierKeys.Alt:
+                _viewModel.ReselectCurrent();
+                e.Handled = true;
+                break;
+            case Key.Z when Keyboard.Modifiers == ModifierKeys.Alt:
+                _viewModel.CycleExpandCollapse();
+                e.Handled = true;
+                break;
         }
+    }
+
+    private void Window_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (_viewModel.IsEditingFormula) return;
+        if (Keyboard.Modifiers != ModifierKeys.None) return;
+        if (string.IsNullOrEmpty(e.Text) || char.IsControl(e.Text[0])) return;
+        _viewModel.BeginFormulaEdit(e.Text);
+        e.Handled = true;
+    }
+
+    private bool HandleAltKey(Key key)
+    {
+        switch (key)
+        {
+            case Key.R:
+                _viewModel.RequestRefresh();
+                return true;
+            case Key.S:
+                _viewModel.ReselectCurrent();
+                return true;
+            case Key.Z:
+                _viewModel.CycleExpandCollapse();
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void FormulaEditor_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            _viewModel.ApplyFormulaEdit(FormulaEditor.Text);
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            _viewModel.CancelFormulaEdit();
+            e.Handled = true;
+        }
+    }
+
+    private void More_Click(object sender, RoutedEventArgs e)
+    {
+        MoreMenu.PlacementTarget = MoreButton;
+        MoreMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        Dispatcher.BeginInvoke(new Action(() => MoreMenu.IsOpen = true));
+    }
+
+    private void EditFormula_Click(object sender, RoutedEventArgs e) => _viewModel.BeginFormulaEdit();
+
+    private void ExplorePrecedents_Click(object sender, RoutedEventArgs e) => _viewModel.RequestExplorePrecedents();
+
+    private void ExploreDependents_Click(object sender, RoutedEventArgs e) => _viewModel.RequestExploreDependents();
+
+    private void GoToExcel_Click(object sender, RoutedEventArgs e) => _viewModel.RequestGoToExcel();
+
+    private void Refresh_Click(object sender, RoutedEventArgs e) => _viewModel.RequestRefresh();
+
+    private void Reselect_Click(object sender, RoutedEventArgs e) => _viewModel.ReselectCurrent();
+
+    private void ExpandCollapse_Click(object sender, RoutedEventArgs e) => _viewModel.CycleExpandCollapse();
+
+    private void ExploreCurrentLocation_Click(object sender, RoutedEventArgs e) => _viewModel.RequestExplorePrecedents();
+
+    private void ResetColumns_Click(object sender, RoutedEventArgs e)
+    {
+        if (TreeGrid.View is not GridView view || view.Columns.Count < 4) return;
+        view.Columns[0].Width = ExplorerChrome.ElementWidth;
+        view.Columns[1].Width = ExplorerChrome.InfoWidth;
+        view.Columns[2].Width = ExplorerChrome.ValueWidth;
+        view.Columns[3].Width = ExplorerChrome.LocationWidth;
     }
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)

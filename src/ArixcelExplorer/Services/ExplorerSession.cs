@@ -31,6 +31,8 @@ public sealed class ExplorerSession
 
     public bool HasOpenWindows => _windows.Count > 0;
 
+    public bool SuspendExcelKeys { get; set; }
+
     public ExplorerStackEntry? FirstOrigin => _origins.First;
 
     public event Action<SessionWindow, ExplorerCloseMode, ExplorerStackEntry?>? WindowClosed;
@@ -99,6 +101,7 @@ public sealed class ExplorerSession
 
         _windows.Clear();
         _origins.Clear();
+        SuspendExcelKeys = false;
         _closingAll = false;
     }
 
@@ -108,6 +111,7 @@ public sealed class ExplorerSession
 
         var previous = PreviousOrigin(sessionWindow.Window);
         _windows.Remove(sessionWindow);
+        if (_windows.Count == 0) SuspendExcelKeys = false;
         var mode = sessionWindow.Window switch
         {
             ExplorerWindow explorer => explorer.CloseMode,

@@ -35,6 +35,7 @@ public sealed class ArixcelRibbon : IRibbonExtensibility
 
     public void OnExplorePrecedents(IRibbonControl control) => AddInCoordinator.OpenExplorer();
     public void OnExploreDependents(IRibbonControl control) => AddInCoordinator.OpenDependents();
+    public void OnGoBack(IRibbonControl control) => AddInCoordinator.ReturnToOrigin();
     public void OnOptions(IRibbonControl control) => AddInCoordinator.OpenOptions();
     public void OnCloseAll(IRibbonControl control) => AddInCoordinator.CloseAllExplorers();
     public void OnFormulaMap(IRibbonControl control) => AddInCoordinator.OpenFormulaMap();
