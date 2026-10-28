@@ -16,14 +16,33 @@ internal sealed class ExcelSheetHighlight
 {
     private const int XlNone = -4142;
 
-    private readonly List<PaintedCell> _painted = new List<PaintedCell>();
+    private readonly List<CellFill> _baseline = new List<CellFill>();
+    private readonly List<CellFill> _owned = new List<CellFill>();
+    private readonly HashSet<string> _seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    private readonly List<CellFill> _active = new List<CellFill>();
     private bool _closed;
+
+    public void Capture(string? address)
+    {
+        if (_closed || string.IsNullOrWhiteSpace(address)) return;
+        try
+        {
+            var excel = Marshal.GetActiveObject("Excel.Application");
+            var range = RangeOf(excel, address!);
+            if (range == null) return;
+            ForEachCell(range, RememberBaseline);
+        }
+        catch
+        {
+            // Missing cells are skipped. Painted cells still restore from what was captured.
+        }
+    }
 
     public void Show(string? address, string? hex)
     {
         if (_closed) return;
-        Clear();
-        if (_closed || string.IsNullOrWhiteSpace(address)) return;
+        RestoreActive();
+        if (string.IsNullOrWhiteSpace(address)) return;
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
@@ -43,7 +62,23 @@ internal sealed class ExcelSheetHighlight
 
                 Invoke(range, "Select");
                 ScrollWithoutCollapsing(excel, range);
-                Paint(range, ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex));
+                var color = ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex);
+                ForEachCell(range, cell =>
+                {
+                    try
+                    {
+                        var fill = Find(_baseline, cell) ?? Own(cell);
+                        if (fill == null) return;
+                        var interior = Get(cell, "Interior");
+                        if (interior == null) return;
+                        Set(interior, "Color", color);
+                        _active.Add(fill);
+                    }
+                    catch
+                    {
+                        // Leave a cell unpainted when its interior cannot be changed.
+                    }
+                });
             });
         }
         catch
@@ -55,97 +90,108 @@ internal sealed class ExcelSheetHighlight
     public void CloseHighlight()
     {
         _closed = true;
-        Clear();
+        RestoreActive();
+        RestoreAll(_baseline);
+        RestoreAll(_owned);
+        try
+        {
+            System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
+                new Action(() => RestoreAll(_baseline)),
+                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        }
+        catch
+        {
+            // The synchronous restore already ran.
+        }
     }
 
     public void Clear()
     {
-        if (_painted.Count == 0) return;
-        var pending = _painted.ToArray();
-        _painted.Clear();
+        RestoreActive();
+    }
+
+    private void RestoreAll(List<CellFill> fills)
+    {
+        if (fills.Count == 0) return;
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
             PreserveSaved(excel, () =>
             {
-                foreach (var painted in pending)
+                foreach (var fill in fills)
                 {
-                    Restore(painted);
+                    Apply(fill);
                 }
             });
         }
         catch
         {
-            foreach (var painted in pending)
+            foreach (var fill in fills)
             {
-                Restore(painted);
+                Apply(fill);
             }
         }
     }
 
-    private static void Restore(PaintedCell painted)
+    private void RestoreActive()
     {
+        foreach (var fill in _active)
+        {
+            Apply(fill);
+        }
+
+        _active.Clear();
+    }
+
+    private CellFill? Find(List<CellFill> fills, object cell)
+    {
+        var key = KeyOf(cell);
+        if (string.IsNullOrEmpty(key)) return null;
+        foreach (var fill in fills)
+        {
+            if (string.Equals(fill.Key, key, StringComparison.OrdinalIgnoreCase)) return fill;
+        }
+
+        return null;
+    }
+
+    private CellFill? Own(object cell)
+    {
+        var existing = Find(_owned, cell);
+        if (existing != null) return existing;
+        var key = KeyOf(cell);
+        if (string.IsNullOrEmpty(key)) return null;
         try
         {
-            var interior = Get(painted.Cell, "Interior");
+            var interior = Get(cell, "Interior");
+            if (interior == null) return null;
+            var fill = ReadFill(cell, interior, key);
+            _owned.Add(fill);
+            return fill;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void RememberBaseline(object cell)
+    {
+        var key = KeyOf(cell);
+        if (string.IsNullOrEmpty(key) || !_seen.Add(key)) return;
+        try
+        {
+            var interior = Get(cell, "Interior");
             if (interior == null) return;
-            if (painted.NoFill)
-            {
-                Set(interior, "Pattern", XlNone);
-                return;
-            }
-
-            if (painted.Pattern != null) Set(interior, "Pattern", painted.Pattern);
-            if (painted.Color != null) Set(interior, "Color", painted.Color);
+            _baseline.Add(ReadFill(cell, interior, key));
         }
         catch
         {
-            // Keep going so one stale cell does not leave the rest green.
+            _seen.Remove(key);
         }
     }
 
-    private void Paint(object range, int color)
-    {
-        int rows;
-        int columns;
-        try
-        {
-            rows = Count(Get(range, "Rows"));
-            columns = Count(Get(range, "Columns"));
-        }
-        catch
-        {
-            return;
-        }
-
-        if (rows <= 0 || columns <= 0) return;
-        if (rows > 400) rows = 400;
-        if (columns > 80) columns = 80;
-        for (var row = 1; row <= rows; row++)
-        {
-            for (var column = 1; column <= columns; column++)
-            {
-                object? cell;
-                try { cell = Item(range, row, column); }
-                catch { continue; }
-                if (cell == null) continue;
-                try
-                {
-                    var interior = Get(cell, "Interior");
-                    if (interior == null) continue;
-                    var snapshot = Snapshot(interior);
-                    Set(interior, "Color", color);
-                    _painted.Add(new PaintedCell { Cell = cell, NoFill = snapshot.NoFill, Pattern = snapshot.Pattern, Color = snapshot.Color });
-                }
-                catch
-                {
-                    // Skip a cell whose interior cannot be read. Do not paint it.
-                }
-            }
-        }
-    }
-
-    private static PaintedCell Snapshot(object interior)
+    private static CellFill ReadFill(object cell, object interior, string key)
     {
         object? colorIndex = null;
         object? pattern = null;
@@ -153,8 +199,49 @@ internal sealed class ExcelSheetHighlight
         try { colorIndex = Get(interior, "ColorIndex"); } catch { /* optional */ }
         try { pattern = Get(interior, "Pattern"); } catch { /* optional */ }
         try { color = Get(interior, "Color"); } catch { /* optional */ }
-        var noFill = IsNone(colorIndex) || IsNone(pattern);
-        return new PaintedCell { NoFill = noFill, Pattern = pattern, Color = color };
+        return new CellFill
+        {
+            Cell = cell,
+            Key = key,
+            NoFill = IsNone(colorIndex),
+            ColorIndex = colorIndex,
+            Pattern = pattern,
+            Color = color
+        };
+    }
+
+    private static void Apply(CellFill fill)
+    {
+        try
+        {
+            var interior = Get(fill.Cell, "Interior");
+            if (interior == null) return;
+            if (fill.NoFill)
+            {
+                try { Set(interior, "ColorIndex", XlNone); } catch { /* try pattern */ }
+                try { Set(interior, "Pattern", XlNone); } catch { /* already cleared */ }
+                return;
+            }
+
+            if (fill.Pattern != null)
+            {
+                try { Set(interior, "Pattern", fill.Pattern); } catch { /* color still restores */ }
+            }
+
+            if (fill.ColorIndex != null)
+            {
+                try { Set(interior, "ColorIndex", fill.ColorIndex); } catch { /* use Color */ }
+            }
+
+            if (fill.Color != null)
+            {
+                try { Set(interior, "Color", fill.Color); } catch { /* best effort */ }
+            }
+        }
+        catch
+        {
+            // One stale cell must not skip the rest of the restore.
+        }
     }
 
     private static bool IsNone(object? value)
@@ -232,10 +319,56 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
-    private sealed class PaintedCell
+    private static void ForEachCell(object range, Action<object> action)
+    {
+        int rows;
+        int columns;
+        try
+        {
+            rows = Count(Get(range, "Rows"));
+            columns = Count(Get(range, "Columns"));
+        }
+        catch
+        {
+            return;
+        }
+
+        if (rows <= 0 || columns <= 0 || rows > 400 || columns > 80) return;
+        for (var row = 1; row <= rows; row++)
+        {
+            for (var column = 1; column <= columns; column++)
+            {
+                object? cell;
+                try { cell = Item(range, row, column); }
+                catch { continue; }
+                if (cell != null) action(cell);
+            }
+        }
+    }
+
+    private static string KeyOf(object cell)
+    {
+        try
+        {
+            var sheetObj = Get(cell, "Worksheet");
+            var sheet = sheetObj == null ? "" : Get(sheetObj, "Name") as string ?? "";
+            var row = Count(Get(cell, "Row"));
+            var column = Count(Get(cell, "Column"));
+            if (row <= 0 || column <= 0) return "";
+            return sheet + "!" + row.ToString(CultureInfo.InvariantCulture) + ":" + column.ToString(CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return "";
+        }
+    }
+
+    private sealed class CellFill
     {
         public object Cell { get; set; } = null!;
+        public string Key { get; set; } = "";
         public object? Color { get; set; }
+        public object? ColorIndex { get; set; }
         public object? Pattern { get; set; }
         public bool NoFill { get; set; }
     }

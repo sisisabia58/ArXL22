@@ -75,6 +75,11 @@ public partial class ExplorerWindow : Window
                 ExplorerChrome.ValueWidth,
                 ExplorerChrome.LocationWidth);
         }
+        foreach (var row in _viewModel.Rows)
+        {
+            var address = !string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.NavigationAddress : row.Location;
+            _sheetHighlight.Capture(address);
+        }
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(ExplorerViewModel.IsEditingFormula))

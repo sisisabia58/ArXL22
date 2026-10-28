@@ -52,6 +52,9 @@ public partial class DependentsWindow : Window
                 ExplorerChrome.DependentsRangeWidth,
                 ExplorerChrome.DependentsCountWidth);
         }
+        CaptureSheetBaseline(includeHostEntries: true);
+        ProbeAndApply();
+        CaptureSheetBaseline(includeHostEntries: false);
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(DependentsViewModel.SelectedIndex) &&
@@ -60,12 +63,28 @@ public partial class DependentsWindow : Window
                 DependentsGrid.ScrollIntoView(DependentsGrid.SelectedItem);
             }
         };
-        ProbeAndApply();
+    }
+
+    private void CaptureSheetBaseline(bool includeHostEntries)
+    {
+        if (includeHostEntries)
+        {
+            foreach (var entry in _viewModel.Entries)
+            {
+                _sheetHighlight.Capture(entry.Address);
+            }
+        }
+
+        foreach (var row in _viewModel.Rows)
+        {
+            _sheetHighlight.Capture(row.Address);
+        }
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         DependentsGrid.Focus();
+        CaptureSheetBaseline(includeHostEntries: false);
         if (_viewModel.Rows.Count == 0) return;
         var index = _viewModel.SelectedIndex >= 0 ? _viewModel.SelectedIndex : 0;
         DependentsGrid.SelectedIndex = index;
