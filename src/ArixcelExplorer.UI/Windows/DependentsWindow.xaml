@@ -189,6 +189,9 @@
           </GridViewColumn>
           <GridViewColumn Header="Count" DisplayMemberBinding="{Binding CountDisplay}"
                           Width="{x:Static settings:ExplorerChrome.DependentsCountWidth}" />
+          <!-- WPF stretches the last column to the viewport. This spacer takes that
+               extra width so Count stays beside Range. -->
+          <GridViewColumn Width="0" />
         </GridView>
       </ListView.View>
     </ListView>

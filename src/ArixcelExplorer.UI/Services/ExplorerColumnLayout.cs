@@ -28,10 +28,11 @@ internal static class ExplorerColumnLayout
     {
         if (view == null || defaults == null || defaults.Length == 0) return;
         EnsureLoaded();
-        var widths = Cache.TryGetValue(key, out var saved) && saved.Length == defaults.Length
+        var tracked = defaults.Length;
+        var widths = Cache.TryGetValue(key, out var saved) && saved.Length == tracked
             ? saved
             : defaults;
-        for (var i = 0; i < view.Columns.Count && i < widths.Length; i++)
+        for (var i = 0; i < tracked && i < view.Columns.Count; i++)
         {
             var width = widths[i];
             if (width < 36 || double.IsNaN(width) || double.IsInfinity(width)) width = defaults[i];
@@ -41,20 +42,21 @@ internal static class ExplorerColumnLayout
         var descriptor = DependencyPropertyDescriptor.FromProperty(
             GridViewColumn.WidthProperty,
             typeof(GridViewColumn));
-        foreach (var column in view.Columns)
+        for (var i = 0; i < tracked && i < view.Columns.Count; i++)
         {
-            descriptor.AddValueChanged(column, (_, _) => Remember(key, view));
+            descriptor.AddValueChanged(view.Columns[i], (_, _) => Remember(key, view, tracked));
         }
     }
 
-    private static void Remember(string key, GridView view)
+    private static void Remember(string key, GridView view, int tracked)
     {
-        var widths = new double[view.Columns.Count];
-        for (var i = 0; i < view.Columns.Count; i++)
+        var widths = new double[tracked];
+        for (var i = 0; i < tracked && i < view.Columns.Count; i++)
         {
-            widths[i] = view.Columns[i].ActualWidth > 1
-                ? view.Columns[i].ActualWidth
-                : view.Columns[i].Width;
+            // Width is the dragged size. ActualWidth on the old last column included
+            // the viewport stretch and would pin Count to the right on the next open.
+            var width = view.Columns[i].Width;
+            widths[i] = width >= 36 && !double.IsNaN(width) && !double.IsInfinity(width) ? width : 36;
         }
 
         Cache[key] = widths;

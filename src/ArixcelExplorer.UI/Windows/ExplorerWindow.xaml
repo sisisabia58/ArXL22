@@ -196,6 +196,8 @@
                           Width="{x:Static settings:ExplorerChrome.ValueWidth}" />
           <GridViewColumn Header="Location" DisplayMemberBinding="{Binding Location}"
                           Width="{x:Static settings:ExplorerChrome.LocationWidth}" />
+          <!-- Last column is stretched by WPF. Keep Location at its real width. -->
+          <GridViewColumn Width="0" />
         </GridView>
       </ListView.View>
     </ListView>
