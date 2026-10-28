@@ -27,6 +27,7 @@ public partial class ExplorerWindow : Window
 
     private readonly ExplorerViewModel _viewModel;
     private readonly ExplorerCloseBehavior _closeBehavior;
+    private readonly ExcelSheetHighlight _sheetHighlight = new ExcelSheetHighlight();
     private bool _explicitClose;
     private bool _syncingSelection;
     private bool _committingFormula;
@@ -50,6 +51,29 @@ public partial class ExplorerWindow : Window
             _explicitClose = true;
             Close();
         };
+        _viewModel.NavigateRequested += row =>
+        {
+            var address = row == null
+                ? ""
+                : !string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.NavigationAddress : row.Location;
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                _sheetHighlight.Clear();
+                return;
+            }
+
+            _sheetHighlight.Show(address, ExcelSheetHighlightColors.Precedent);
+        };
+        if (TreeGrid.View is GridView precedentColumns)
+        {
+            ExplorerColumnLayout.Attach(
+                precedentColumns,
+                "precedents",
+                ExplorerChrome.ElementWidth,
+                ExplorerChrome.InfoWidth,
+                ExplorerChrome.ValueWidth,
+                ExplorerChrome.LocationWidth);
+        }
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(ExplorerViewModel.IsEditingFormula))
@@ -544,6 +568,7 @@ public partial class ExplorerWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        _sheetHighlight.Clear();
         _caretHook?.Dispose();
         _caretHook = null;
         if (_explicitClose) return;

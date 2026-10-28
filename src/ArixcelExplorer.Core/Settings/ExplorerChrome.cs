@@ -20,8 +20,8 @@ public static class ExplorerChrome
     public const double DependentsHeight = 560;
     public const double DependentsMinWidth = 460;
     public const double DependentsMinHeight = 240;
-    public const double DependentsRangeWidth = 420;
-    public const double DependentsCountWidth = 72;
+    public const double DependentsRangeWidth = 260;
+    public const double DependentsCountWidth = 64;
 
     public const double OptionsWidth = 380;
     public const double OptionsHeight = 292;

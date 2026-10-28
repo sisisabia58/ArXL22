@@ -17,6 +17,10 @@ public sealed class ExplorerParityTests
         Assert.True(ExplorerChrome.FormulaPaneHeight >= 32);
         Assert.Equal(20, ExplorerChrome.RowHeight);
         Assert.True(ExplorerChrome.ElementWidth >= 180);
+        Assert.InRange(ExplorerChrome.DependentsRangeWidth, 180, 320);
+        Assert.True(
+            ExplorerChrome.DependentsRangeWidth + ExplorerChrome.DependentsCountWidth <
+            ExplorerChrome.DependentsWidth - 120);
         Assert.True(ExplorerChrome.ValueWidth >= 120);
         Assert.True(ExplorerChrome.IsLegacyCompact(428, 338));
         Assert.False(ExplorerChrome.IsLegacyCompact(ExplorerChrome.ExplorerWidth, ExplorerChrome.ExplorerHeight));

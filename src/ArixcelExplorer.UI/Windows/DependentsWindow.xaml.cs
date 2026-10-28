@@ -14,6 +14,7 @@ public partial class DependentsWindow : Window
 {
     private readonly DependentsViewModel _viewModel;
     private readonly ExplorerCloseBehavior _closeBehavior;
+    private readonly ExcelSheetHighlight _sheetHighlight = new ExcelSheetHighlight();
     private bool _explicitClose;
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
@@ -32,6 +33,24 @@ public partial class DependentsWindow : Window
             _explicitClose = true;
             Close();
         };
+        _viewModel.NavigateRequested += row =>
+        {
+            if (row == null || row.IsGroup || string.IsNullOrWhiteSpace(row.Address))
+            {
+                _sheetHighlight.Clear();
+                return;
+            }
+
+            _sheetHighlight.Show(row.Address, ExcelSheetHighlightColors.Dependent);
+        };
+        if (DependentsGrid.View is GridView dependentsColumns)
+        {
+            ExplorerColumnLayout.Attach(
+                dependentsColumns,
+                "dependents",
+                ExplorerChrome.DependentsRangeWidth,
+                ExplorerChrome.DependentsCountWidth);
+        }
         _viewModel.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(DependentsViewModel.SelectedIndex) &&
@@ -136,6 +155,7 @@ public partial class DependentsWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        _sheetHighlight.Clear();
         if (_explicitClose) return;
         if (_closeBehavior == ExplorerCloseBehavior.EscNavigatesBack)
         {
