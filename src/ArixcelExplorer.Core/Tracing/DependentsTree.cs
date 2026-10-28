@@ -190,6 +190,92 @@ public static class DependentsTree
         return QuoteSheet(parsed.WorksheetName) + "!" + range;
     }
 
+    /// <summary>
+    /// A single-row hit such as G60:J60 grows to the columns of a wider area on
+    /// that same row (D60:J60, or row 60 of D60:J63). A vertical target such as
+    /// G48:G53 is left unchanged.
+    /// </summary>
+    public static string WidenSingleRow(string? narrow, string? wide)
+    {
+        var left = NormalizeAddress(narrow, narrow);
+        var right = NormalizeAddress(wide, string.IsNullOrEmpty(left) ? wide : left);
+        if (string.IsNullOrEmpty(left)) return right;
+        if (string.IsNullOrEmpty(right) || SameRange(left, right)) return left;
+        if (!TryBounds(left, out var leftSheet, out var leftMinRow, out var leftMaxRow, out var leftMinCol, out var leftMaxCol))
+        {
+            return left;
+        }
+
+        if (!TryBounds(right, out var rightSheet, out var rightMinRow, out var rightMaxRow, out var rightMinCol, out var rightMaxCol))
+        {
+            return left;
+        }
+
+        if (leftMinRow != leftMaxRow || !SameSheet(leftSheet, rightSheet)) return left;
+        if (rightMinRow > leftMinRow || rightMaxRow < leftMaxRow) return left;
+        if (rightMinCol > leftMinCol || rightMaxCol < leftMaxCol) return left;
+        return FormatA1(leftSheet, leftMinRow, rightMinCol, leftMaxRow, rightMaxCol);
+    }
+
+    public static bool FormulaReferencesOrigin(string? formula, string? contextSheet, string? originAddress)
+    {
+        if (string.IsNullOrWhiteSpace(formula)) return false;
+        var text = formula!.Trim();
+        if (text.IndexOf('=') < 0) return false;
+        var origin = NormalizeAddress(originAddress, originAddress);
+        if (string.IsNullOrEmpty(origin)) return false;
+        var sheet = string.IsNullOrWhiteSpace(contextSheet) ? SheetOf(origin) : contextSheet!;
+        foreach (var segment in Formulas.FormulaReferences.TokenizeFormulaReferences(text, sheet))
+        {
+            if (segment is not Formulas.FormulaReferenceSegment reference) continue;
+            if (reference.Target is not TraceAddressTargetWrapper wrapper) continue;
+            var target = NormalizeAddress(wrapper.Target.Address, origin);
+            if (string.IsNullOrEmpty(target)) continue;
+            if (SameRange(target, origin) || ContainsRange(target, origin)) return true;
+        }
+
+        return false;
+    }
+
+    public static IReadOnlyList<string> SplitAreas(string? address)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(address)) return result;
+        var current = new System.Text.StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < address!.Length; i++)
+        {
+            var ch = address[i];
+            if (ch == '\'')
+            {
+                current.Append(ch);
+                if (quoted && i + 1 < address.Length && address[i + 1] == '\'')
+                {
+                    current.Append(address[i + 1]);
+                    i++;
+                    continue;
+                }
+
+                quoted = !quoted;
+                continue;
+            }
+
+            if (!quoted && (ch == ',' || ch == ';'))
+            {
+                var part = current.ToString().Trim();
+                if (part.Length > 0) result.Add(part);
+                current.Clear();
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        var last = current.ToString().Trim();
+        if (last.Length > 0) result.Add(last);
+        return result;
+    }
+
     public static bool ContainsRange(string? outer, string? inner)
     {
         if (!TryBounds(outer, out var outerSheet, out var outerMinRow, out var outerMaxRow, out var outerMinCol, out var outerMaxCol))

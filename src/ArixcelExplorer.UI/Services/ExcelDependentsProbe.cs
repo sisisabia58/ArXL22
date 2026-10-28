@@ -61,16 +61,32 @@ internal static class ExcelDependentsProbe
             try { ReadAreas(origin, areas); } catch { /* no same-sheet dependents */ }
             try
             {
+                // One select so the tracer starts at the source. Selecting again
+                // between arrows clears them and drops later areas such as D67:J67.
+                try { Invoke(origin, "Select"); } catch { /* ShowDependents still accepts the range */ }
                 if (ShowDependents(origin))
                 {
-                    // Do not select between arrows. Changing the selection clears
-                    // tracer arrows, so later rows such as D67:J67 never appear.
                     WalkArrows(excel, origin, originAddress!, arrows);
                 }
             }
             catch
             {
                 // Cross-sheet arrows are optional; same-sheet areas still stand.
+            }
+
+            try
+            {
+                // DirectDependents can stop at column G while the arrow selection,
+                // array, or neighboring formulas still cover D:J and row 67.
+                var discovered = new List<string>(arrows.Count + areas.Count);
+                discovered.AddRange(arrows);
+                discovered.AddRange(areas);
+                ExpandByFormulas(excel, originAddress!, discovered);
+                areas.AddRange(discovered);
+            }
+            catch
+            {
+                // Keep whatever Areas and arrows were already collected.
             }
         }
         finally
@@ -162,27 +178,14 @@ internal static class ExcelDependentsProbe
                 object? dest;
                 try
                 {
+                    // A second call after a failure restarts the arrow list and
+                    // skips the last area. Stop this link, or the walk, instead.
                     dest = Invoke(source, "NavigateArrow", false, arrow, link);
                 }
                 catch
                 {
-                    var refreshed = RangeOf(excel, originAddress);
-                    if (refreshed == null)
-                    {
-                        if (link == 1) return;
-                        break;
-                    }
-
-                    source = refreshed;
-                    try
-                    {
-                        dest = Invoke(source, "NavigateArrow", false, arrow, link);
-                    }
-                    catch
-                    {
-                        if (link == 1) return;
-                        break;
-                    }
+                    if (link == 1) return;
+                    break;
                 }
 
                 if (dest == null)
@@ -225,44 +228,72 @@ internal static class ExcelDependentsProbe
     private static List<string> DescribeTarget(object excel, object dest)
     {
         var pieces = ListAddresses(dest);
-        if (pieces.Count != 1 || !IsOneCell(pieces[0])) return pieces;
-
+        var extras = new List<string>();
         try
         {
             var selection = Get(excel, "Selection");
-            if (selection == null) return pieces;
-            var selected = ListAddresses(selection);
-            if (selected.Count != 1) return pieces;
-            var chosen = DependentsTree.NormalizeAddress(selected[0], pieces[0]);
-            var cell = DependentsTree.NormalizeAddress(pieces[0], pieces[0]);
-            if (string.IsNullOrEmpty(chosen) || !DependentsTree.ContainsRange(chosen, cell)) return pieces;
-            if (!IsSingleRowOrColumn(chosen)) return pieces;
-            return new List<string> { selected[0] };
+            if (selection != null) extras.AddRange(ListAddresses(selection));
         }
         catch
         {
-            return pieces;
+            // Selection is only a wider view of the same arrow.
         }
-    }
 
-    private static bool IsOneCell(string address)
-    {
-        var normalized = DependentsTree.NormalizeAddress(address, address);
-        var parsed = TraceUtils.ParseWorksheetScopedAddress(string.IsNullOrEmpty(normalized) ? address : normalized);
-        var range = (parsed?.RangeAddress ?? address).Replace("$", "");
-        return range.IndexOf(':') < 0 && TraceUtils.ParseCellAddress(range) != null;
-    }
+        try
+        {
+            var currentArray = Get(dest, "CurrentArray");
+            if (currentArray != null) extras.AddRange(ListAddresses(currentArray));
+        }
+        catch
+        {
+            // CurrentArray throws when the target is not an array formula.
+        }
 
-    private static bool IsSingleRowOrColumn(string address)
-    {
-        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
-        var range = (parsed?.RangeAddress ?? address).Replace("$", "");
-        var parts = range.Split(':');
-        if (parts.Length != 2) return false;
-        var start = TraceUtils.ParseCellAddress(parts[0]);
-        var end = TraceUtils.ParseCellAddress(parts[1]);
-        if (start == null || end == null) return false;
-        return start.Value.Row == end.Value.Row || start.Value.Col == end.Value.Col;
+        if (pieces.Count == 0) return extras;
+        var widened = new List<string>(pieces.Count);
+        foreach (var piece in pieces)
+        {
+            var best = piece;
+            foreach (var extra in extras)
+            {
+                best = DependentsTree.WidenSingleRow(best, extra);
+            }
+
+            widened.Add(best);
+        }
+
+        foreach (var extra in extras)
+        {
+            var related = false;
+            foreach (var piece in pieces)
+            {
+                var extraNorm = DependentsTree.NormalizeAddress(extra, piece);
+                var pieceNorm = DependentsTree.NormalizeAddress(piece, piece);
+                if (DependentsTree.ContainsRange(extraNorm, pieceNorm) ||
+                    DependentsTree.ContainsRange(pieceNorm, extraNorm) ||
+                    TraceUtils.AddressesReferToSameRange(extraNorm, pieceNorm))
+                {
+                    related = true;
+                    break;
+                }
+            }
+
+            if (!related) continue;
+            var covered = false;
+            foreach (var piece in widened)
+            {
+                if (TraceUtils.AddressesReferToSameRange(piece, extra) ||
+                    DependentsTree.ContainsRange(piece, DependentsTree.NormalizeAddress(extra, piece)))
+                {
+                    covered = true;
+                    break;
+                }
+            }
+
+            if (!covered) widened.Add(extra);
+        }
+
+        return widened;
     }
 
     private static List<string> ListAddresses(object range)
@@ -294,11 +325,11 @@ internal static class ExcelDependentsProbe
         }
 
         var single = AddressOf(range);
-        if (!string.IsNullOrEmpty(single)) return new List<string> { single };
+        if (!string.IsNullOrEmpty(single)) return SplitQualified(single);
         try
         {
             var formatted = FormatRange(range);
-            if (!string.IsNullOrEmpty(formatted)) return new List<string> { formatted };
+            if (!string.IsNullOrEmpty(formatted)) return SplitQualified(formatted);
         }
         catch
         {
@@ -306,6 +337,206 @@ internal static class ExcelDependentsProbe
         }
 
         return new List<string>();
+    }
+
+    private static List<string> SplitQualified(string address)
+    {
+        var pieces = new List<string>();
+        foreach (var part in DependentsTree.SplitAreas(address))
+        {
+            if (!string.IsNullOrWhiteSpace(part)) pieces.Add(part.Trim());
+        }
+
+        return pieces.Count > 0 ? pieces : new List<string> { address };
+    }
+
+    private static void ExpandByFormulas(object excel, string originAddress, List<string> hits)
+    {
+        var snapshot = hits.ToArray();
+        foreach (var address in snapshot)
+        {
+            var widened = ExtendRow(excel, originAddress, address);
+            if (!string.IsNullOrEmpty(widened)) hits.Add(widened);
+        }
+
+        var sheets = new Dictionary<string, ColumnSpan>(StringComparer.OrdinalIgnoreCase);
+        foreach (var address in hits)
+        {
+            var normalized = DependentsTree.NormalizeAddress(address, originAddress);
+            var parsed = TraceUtils.ParseWorksheetScopedAddress(normalized);
+            if (parsed == null || !TraceUtils.IsRangeAddress(parsed.RangeAddress)) continue;
+            var parts = parsed.RangeAddress.Split(':');
+            var start = TraceUtils.ParseCellAddress(parts[0]);
+            var end = TraceUtils.ParseCellAddress(parts[parts.Length - 1]);
+            if (start == null || end == null) continue;
+            if (!sheets.TryGetValue(parsed.WorksheetName, out var span))
+            {
+                span = new ColumnSpan
+                {
+                    Min = Math.Min(start.Value.Col, end.Value.Col),
+                    Max = Math.Max(start.Value.Col, end.Value.Col)
+                };
+                sheets[parsed.WorksheetName] = span;
+            }
+            else
+            {
+                span.Min = Math.Min(span.Min, Math.Min(start.Value.Col, end.Value.Col));
+                span.Max = Math.Max(span.Max, Math.Max(start.Value.Col, end.Value.Col));
+            }
+        }
+
+        foreach (var sheet in sheets)
+        {
+            DiscoverRows(excel, originAddress, sheet.Key, sheet.Value.Min, sheet.Value.Max, hits);
+        }
+    }
+
+    private static string ExtendRow(object excel, string originAddress, string address)
+    {
+        var normalized = DependentsTree.NormalizeAddress(address, originAddress);
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(normalized);
+        if (parsed == null || !TraceUtils.IsRangeAddress(parsed.RangeAddress)) return "";
+        var parts = parsed.RangeAddress.Split(':');
+        var start = TraceUtils.ParseCellAddress(parts[0]);
+        var end = TraceUtils.ParseCellAddress(parts[parts.Length - 1]);
+        if (start == null || end == null || start.Value.Row != end.Value.Row) return "";
+
+        var row = start.Value.Row;
+        var minCol = Math.Min(start.Value.Col, end.Value.Col);
+        var maxCol = Math.Max(start.Value.Col, end.Value.Col);
+        var guard = 0;
+        while (minCol > 0 && guard < 64 &&
+               CellReferencesOrigin(excel, parsed.WorksheetName, row, minCol - 1, originAddress))
+        {
+            minCol--;
+            guard++;
+        }
+
+        guard = 0;
+        while (maxCol < 16383 && guard < 64 &&
+               CellReferencesOrigin(excel, parsed.WorksheetName, row, maxCol + 1, originAddress))
+        {
+            maxCol++;
+            guard++;
+        }
+
+        var widened = "'" + parsed.WorksheetName.Replace("'", "''") + "'!" +
+                      TraceUtils.ColumnLetters(minCol) + (row + 1).ToString(CultureInfo.InvariantCulture);
+        if (minCol != maxCol)
+        {
+            widened += ":" + TraceUtils.ColumnLetters(maxCol) + (row + 1).ToString(CultureInfo.InvariantCulture);
+        }
+
+        return widened;
+    }
+
+    private static void DiscoverRows(
+        object excel,
+        string originAddress,
+        string sheet,
+        int minCol,
+        int maxCol,
+        List<string> hits)
+    {
+        var probe = RangeOf(excel, "'" + sheet.Replace("'", "''") + "'!A1");
+        if (probe == null) return;
+        object? worksheet;
+        try { worksheet = Get(probe, "Worksheet"); }
+        catch { return; }
+        if (worksheet == null) return;
+
+        object? used;
+        try { used = Get(worksheet, "UsedRange"); }
+        catch { return; }
+        if (used == null) return;
+
+        int firstRow;
+        int rowCount;
+        try
+        {
+            firstRow = Convert.ToInt32(Get(used, "Row"), CultureInfo.InvariantCulture);
+            var rows = Get(used, "Rows");
+            rowCount = Convert.ToInt32(Get(rows!, "Count"), CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (rowCount <= 0) return;
+        if (rowCount > 2000) rowCount = 2000;
+        var lastRow = firstRow + rowCount - 1;
+        var width = maxCol - minCol + 1;
+        if (width <= 0 || width > 40) return;
+
+        var blockAddress = "'" + sheet.Replace("'", "''") + "'!" +
+                           TraceUtils.ColumnLetters(minCol) + firstRow.ToString(CultureInfo.InvariantCulture) + ":" +
+                           TraceUtils.ColumnLetters(maxCol) + lastRow.ToString(CultureInfo.InvariantCulture);
+        var block = RangeOf(excel, blockAddress);
+        if (block == null) return;
+        object? formulas;
+        try { formulas = Get(block, "Formula"); }
+        catch { return; }
+
+        var originNorm = DependentsTree.NormalizeAddress(originAddress, originAddress);
+        for (var row = firstRow; row <= lastRow; row++)
+        {
+            for (var col = minCol; col <= maxCol; col++)
+            {
+                var formula = FormulaAt(formulas, row - firstRow, col - minCol, width, rowCount);
+                if (!DependentsTree.FormulaReferencesOrigin(formula, sheet, originAddress)) continue;
+                var cell = "'" + sheet.Replace("'", "''") + "'!" +
+                           TraceUtils.ColumnLetters(col) + row.ToString(CultureInfo.InvariantCulture);
+                if (TraceUtils.AddressesReferToSameRange(cell, originNorm)) continue;
+                hits.Add(cell);
+            }
+        }
+    }
+
+    private static string FormulaAt(object? formulas, int rowOffset, int columnOffset, int width, int height)
+    {
+        if (formulas is string text) return text;
+        if (formulas is Array array && array.Rank == 1)
+        {
+            var index = array.GetLowerBound(0) + columnOffset;
+            if (index > array.GetUpperBound(0)) return "";
+            return array.GetValue(index) as string ?? "";
+        }
+
+        if (formulas is Array grid && grid.Rank == 2)
+        {
+            var row = grid.GetLowerBound(0) + rowOffset;
+            var column = grid.GetLowerBound(1) + columnOffset;
+            if (row > grid.GetUpperBound(0) || column > grid.GetUpperBound(1)) return "";
+            return grid.GetValue(row, column) as string ?? "";
+        }
+
+        if (width == 1 && height == 1 && formulas != null) return formulas.ToString() ?? "";
+        return "";
+    }
+
+    private static bool CellReferencesOrigin(object excel, string sheet, int rowIndex, int columnIndex, string originAddress)
+    {
+        var address = "'" + sheet.Replace("'", "''") + "'!" +
+                      TraceUtils.ColumnLetters(columnIndex) + (rowIndex + 1).ToString(CultureInfo.InvariantCulture);
+        var range = RangeOf(excel, address);
+        if (range == null) return false;
+        string? formula = null;
+        try { formula = Get(range, "Formula") as string; }
+        catch { formula = null; }
+        if (string.IsNullOrEmpty(formula))
+        {
+            try { formula = Get(range, "FormulaLocal") as string; }
+            catch { formula = null; }
+        }
+
+        return DependentsTree.FormulaReferencesOrigin(formula, sheet, originAddress);
+    }
+
+    private sealed class ColumnSpan
+    {
+        public int Min { get; set; }
+        public int Max { get; set; }
     }
 
     private static string AddressOf(object range)

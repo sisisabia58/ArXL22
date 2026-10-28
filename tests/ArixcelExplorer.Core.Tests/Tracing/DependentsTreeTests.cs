@@ -146,6 +146,50 @@ public sealed class DependentsTreeTests
     }
 
     [Fact]
+    public void Wider_row_area_replaces_a_partial_arrow_and_keeps_the_fifth_row()
+    {
+        const string origin = "'Summary (Instit)'!I32";
+        var combined = DependentsTree.Combine(
+            origin,
+            new[] { "G60:J60", "G61:J61", "G62:J62", "G63:J63" },
+            new[] { "D60:J60", "D61:J61", "D62:J62", "D63:J63", "D67:J67" });
+        var grouped = DependentsTree.Build(origin, "", combined, groupBySheet: true);
+
+        Assert.Equal(5, grouped.Count);
+        Assert.Equal(
+            new[]
+            {
+                "'Summary (Instit)'!D60:J60",
+                "'Summary (Instit)'!D61:J61",
+                "'Summary (Instit)'!D62:J62",
+                "'Summary (Instit)'!D63:J63",
+                "'Summary (Instit)'!D67:J67"
+            },
+            grouped.Children[0].Children.Select(node => node.Display).ToArray());
+    }
+
+    [Fact]
+    public void WidenSingleRow_expands_G_to_D_without_merging_rows_or_vertical_targets()
+    {
+        const string origin = "'Summary (Instit)'!I32";
+        Assert.Equal(
+            "'Summary (Instit)'!D60:J60",
+            DependentsTree.WidenSingleRow("'Summary (Instit)'!G60:J60", "'Summary (Instit)'!D60:J60"));
+        Assert.Equal(
+            "'Summary (Instit)'!D60:J60",
+            DependentsTree.WidenSingleRow("'Summary (Instit)'!G60:J60", "'Summary (Instit)'!D60:J63"));
+        Assert.Equal(
+            "'Investment Cashflows'!G48:G53",
+            DependentsTree.WidenSingleRow("'Investment Cashflows'!G48:G53", "'Investment Cashflows'!G48:H53"));
+        Assert.True(DependentsTree.FormulaReferencesOrigin("=$I32", "Summary (Instit)", origin));
+        Assert.True(DependentsTree.FormulaReferencesOrigin("=D60:J60", "Summary (Instit)", "'Summary (Instit)'!G60"));
+        Assert.False(DependentsTree.FormulaReferencesOrigin("='Investment Cashflows'!G43", "Summary (Instit)", origin));
+        Assert.Equal(
+            new[] { "'Summary (Instit)'!D60:J60", "'Summary (Instit)'!D67:J67" },
+            DependentsTree.SplitAreas("'Summary (Instit)'!D60:J60,'Summary (Instit)'!D67:J67"));
+    }
+
+    [Fact]
     public void Build_groups_by_sheet_without_changing_the_root_count()
     {
         var tree = DependentsTree.Build(Origin, "", SampleEntries(), groupBySheet: true);
