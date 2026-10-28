@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ArixcelExplorer.Core.Settings;
-using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.UI.Services;
 
@@ -15,31 +14,37 @@ namespace ArixcelExplorer.UI.Services;
 /// </summary>
 internal sealed class ExcelSheetHighlight
 {
-    private readonly Dictionary<string, int> _original = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _painted = new List<string>();
+    private const int XlNone = -4142;
+
+    private readonly List<PaintedCell> _painted = new List<PaintedCell>();
+    private bool _closed;
 
     public void Show(string? address, string? hex)
     {
+        if (_closed) return;
         Clear();
-        if (string.IsNullOrWhiteSpace(address)) return;
+        if (_closed || string.IsNullOrWhiteSpace(address)) return;
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
-            var range = RangeOf(excel, address!);
-            if (range == null) return;
-            try
+            PreserveSaved(excel, () =>
             {
-                var sheet = Get(range, "Worksheet");
-                if (sheet != null) Invoke(sheet, "Activate");
-            }
-            catch
-            {
-                // Select still moves to the range when the sheet is already active.
-            }
+                var range = RangeOf(excel, address!);
+                if (range == null) return;
+                try
+                {
+                    var sheet = Get(range, "Worksheet");
+                    if (sheet != null) Invoke(sheet, "Activate");
+                }
+                catch
+                {
+                    // Select still moves to the range when the sheet is already active.
+                }
 
-            Invoke(range, "Select");
-            ScrollWithoutCollapsing(excel, range);
-            Paint(range, ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex));
+                Invoke(range, "Select");
+                ScrollWithoutCollapsing(excel, range);
+                Paint(range, ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex));
+            });
         }
         catch
         {
@@ -47,35 +52,56 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
+    public void CloseHighlight()
+    {
+        _closed = true;
+        Clear();
+    }
+
     public void Clear()
     {
         if (_painted.Count == 0) return;
+        var pending = _painted.ToArray();
+        _painted.Clear();
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
-            foreach (var address in _painted)
+            PreserveSaved(excel, () =>
             {
-                if (!_original.TryGetValue(address, out var color)) continue;
-                var cell = RangeOf(excel, address);
-                if (cell == null) continue;
-                try
+                foreach (var painted in pending)
                 {
-                    var interior = Get(cell, "Interior");
-                    if (interior != null) Set(interior, "Color", color);
+                    Restore(painted);
                 }
-                catch
-                {
-                    // A deleted sheet should not block the rest of the restore.
-                }
-            }
+            });
         }
         catch
         {
-            // Excel is gone; nothing left to restore.
+            foreach (var painted in pending)
+            {
+                Restore(painted);
+            }
         }
+    }
 
-        _painted.Clear();
-        _original.Clear();
+    private static void Restore(PaintedCell painted)
+    {
+        try
+        {
+            var interior = Get(painted.Cell, "Interior");
+            if (interior == null) return;
+            if (painted.NoFill)
+            {
+                Set(interior, "Pattern", XlNone);
+                return;
+            }
+
+            if (painted.Pattern != null) Set(interior, "Pattern", painted.Pattern);
+            if (painted.Color != null) Set(interior, "Color", painted.Color);
+        }
+        catch
+        {
+            // Keep going so one stale cell does not leave the rest green.
+        }
     }
 
     private void Paint(object range, int color)
@@ -103,24 +129,76 @@ internal sealed class ExcelSheetHighlight
                 try { cell = Item(range, row, column); }
                 catch { continue; }
                 if (cell == null) continue;
-                var address = ExternalAddress(cell);
-                if (string.IsNullOrEmpty(address)) continue;
                 try
                 {
                     var interior = Get(cell, "Interior");
                     if (interior == null) continue;
-                    if (!_original.ContainsKey(address))
-                    {
-                        _original[address] = Convert.ToInt32(Convert.ToDouble(Get(interior, "Color"), CultureInfo.InvariantCulture));
-                    }
-
+                    var snapshot = Snapshot(interior);
                     Set(interior, "Color", color);
-                    _painted.Add(address);
+                    _painted.Add(new PaintedCell { Cell = cell, NoFill = snapshot.NoFill, Pattern = snapshot.Pattern, Color = snapshot.Color });
                 }
                 catch
                 {
-                    // Skip a cell whose interior cannot be read.
+                    // Skip a cell whose interior cannot be read. Do not paint it.
                 }
+            }
+        }
+    }
+
+    private static PaintedCell Snapshot(object interior)
+    {
+        object? colorIndex = null;
+        object? pattern = null;
+        object? color = null;
+        try { colorIndex = Get(interior, "ColorIndex"); } catch { /* optional */ }
+        try { pattern = Get(interior, "Pattern"); } catch { /* optional */ }
+        try { color = Get(interior, "Color"); } catch { /* optional */ }
+        var noFill = IsNone(colorIndex) || IsNone(pattern);
+        return new PaintedCell { NoFill = noFill, Pattern = pattern, Color = color };
+    }
+
+    private static bool IsNone(object? value)
+    {
+        if (value == null) return false;
+        try
+        {
+            return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture)) == XlNone;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void PreserveSaved(object excel, Action action)
+    {
+        object? workbook = null;
+        var wasSaved = false;
+        var knowSaved = false;
+        try
+        {
+            workbook = Get(excel, "ActiveWorkbook");
+            if (workbook != null)
+            {
+                wasSaved = Convert.ToBoolean(Get(workbook, "Saved"), CultureInfo.InvariantCulture);
+                knowSaved = true;
+            }
+        }
+        catch
+        {
+            knowSaved = false;
+        }
+
+        try
+        {
+            action();
+        }
+        finally
+        {
+            if (knowSaved && wasSaved && workbook != null)
+            {
+                try { Set(workbook, "Saved", true); }
+                catch { /* the restore still happened */ }
             }
         }
     }
@@ -154,38 +232,12 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
-    private static string ExternalAddress(object cell)
+    private sealed class PaintedCell
     {
-        try
-        {
-            var value = cell.GetType().InvokeMember(
-                "Address",
-                BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance,
-                null,
-                cell,
-                new object[] { false, false, 1, true, Missing.Value });
-            var text = value as string;
-            if (!string.IsNullOrWhiteSpace(text)) return text!.Trim();
-        }
-        catch
-        {
-            // Fall through to a sheet-qualified address built from the indexes.
-        }
-
-        try
-        {
-            var sheetObj = Get(cell, "Worksheet");
-            var sheet = sheetObj == null ? "" : Get(sheetObj, "Name") as string ?? "";
-            var row = Count(Get(cell, "Row"));
-            var column = Count(Get(cell, "Column"));
-            var a1 = TraceUtils.ColumnLetters(column - 1) + row.ToString(CultureInfo.InvariantCulture);
-            if (string.IsNullOrEmpty(sheet)) return a1;
-            return "'" + sheet.Replace("'", "''") + "'!" + a1;
-        }
-        catch
-        {
-            return "";
-        }
+        public object Cell { get; set; } = null!;
+        public object? Color { get; set; }
+        public object? Pattern { get; set; }
+        public bool NoFill { get; set; }
     }
 
     private static object? RangeOf(object excel, string address)

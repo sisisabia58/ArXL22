@@ -33,6 +33,7 @@ public partial class DependentsWindow : Window
             _explicitClose = true;
             Close();
         };
+        Closed += (_, _) => _sheetHighlight.CloseHighlight();
         _viewModel.NavigateRequested += row =>
         {
             if (row == null || row.IsGroup || string.IsNullOrWhiteSpace(row.Address))
@@ -155,7 +156,7 @@ public partial class DependentsWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
-        _sheetHighlight.Clear();
+        _sheetHighlight.CloseHighlight();
         if (_explicitClose) return;
         if (_closeBehavior == ExplorerCloseBehavior.EscNavigatesBack)
         {

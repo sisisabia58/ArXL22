@@ -51,6 +51,7 @@ public partial class ExplorerWindow : Window
             _explicitClose = true;
             Close();
         };
+        Closed += (_, _) => _sheetHighlight.CloseHighlight();
         _viewModel.NavigateRequested += row =>
         {
             var address = row == null
@@ -568,7 +569,7 @@ public partial class ExplorerWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
-        _sheetHighlight.Clear();
+        _sheetHighlight.CloseHighlight();
         _caretHook?.Dispose();
         _caretHook = null;
         if (_explicitClose) return;
