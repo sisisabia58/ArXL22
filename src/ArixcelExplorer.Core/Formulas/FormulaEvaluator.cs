@@ -27,14 +27,19 @@ public static class FormulaEvaluator
 {
     public static void EnrichTree(FormulaAstNode root, IFormulaEvaluationContext context, string worksheetName)
     {
-        EnrichNode(root, context, worksheetName);
+        EnrichNode(root, root, context, worksheetName, root.SourceFormula ?? "");
     }
 
-    private static void EnrichNode(FormulaAstNode node, IFormulaEvaluationContext context, string worksheetName)
+    private static void EnrichNode(
+        FormulaAstNode node,
+        FormulaAstNode root,
+        IFormulaEvaluationContext context,
+        string worksheetName,
+        string sourceFormula)
     {
         foreach (var child in node.Children)
         {
-            EnrichNode(child, context, worksheetName);
+            EnrichNode(child, root, context, worksheetName, sourceFormula);
         }
 
         switch (node.Kind)
@@ -49,6 +54,12 @@ public static class FormulaEvaluator
                     node.Location = location;
                 }
 
+                if (TraceUtils.IsMultiCellRange(node.Location) || TraceUtils.IsMultiCellRange(node.Label))
+                {
+                    node.Value = TraceUtils.ArrayValue;
+                    break;
+                }
+
                 if (node.Location != null && context.TryResolveReferenceValue(node.Location, out var refValue))
                 {
                     node.Value = refValue;
@@ -56,13 +67,13 @@ public static class FormulaEvaluator
 
                 break;
             case FormulaNodeKind.Function:
-                EnrichFunction(node, context, worksheetName);
+                EnrichFunction(node, root, context, worksheetName, sourceFormula);
                 break;
             case FormulaNodeKind.Operator:
                 if (!string.IsNullOrWhiteSpace(node.Label))
                 {
                     var evaluated = context.EvaluateSubExpression("=" + node.Label, worksheetName);
-                    if (!string.IsNullOrEmpty(evaluated))
+                    if (TraceUtils.IsUsableFormulaResult(evaluated))
                     {
                         node.Value = evaluated;
                     }
@@ -72,8 +83,15 @@ public static class FormulaEvaluator
         }
     }
 
-    private static void EnrichFunction(FormulaAstNode node, IFormulaEvaluationContext context, string worksheetName)
+    private static void EnrichFunction(
+        FormulaAstNode node,
+        FormulaAstNode root,
+        IFormulaEvaluationContext context,
+        string worksheetName,
+        string sourceFormula)
     {
+        if (node.IsStructural) return;
+
         var upper = node.Label.ToUpperInvariant();
         switch (upper)
         {
@@ -97,18 +115,56 @@ public static class FormulaEvaluator
                 }
 
                 break;
-            case "SUM":
-            case "SUMIF":
-            case "SUMIFS":
-                node.Label = upper + $" ({node.Children.Count} args)";
-                break;
         }
 
-        var subFormula = "=" + node.Label + "(" + string.Join(", ", node.Children.ConvertAll(c => c.Label)) + ")";
+        var subFormula = BuildSubFormula(node, sourceFormula);
         var evaluated = context.EvaluateSubExpression(subFormula, worksheetName);
-        if (!string.IsNullOrEmpty(evaluated))
+        if (TraceUtils.IsUsableFormulaResult(evaluated))
         {
             node.Value = evaluated;
         }
+        else if (IsEntireFormula(node, root))
+        {
+            var inherited = TraceUtils.FormatTraceValue(root.Value);
+            if (TraceUtils.IsUsableFormulaResult(inherited))
+            {
+                node.Value = inherited;
+            }
+        }
+        else if (!string.IsNullOrEmpty(evaluated))
+        {
+            node.Value = evaluated;
+        }
+    }
+
+    private static bool IsEntireFormula(FormulaAstNode node, FormulaAstNode root) =>
+        root.Children.Count == 1 && root.Children[0].Id == node.Id;
+
+    private static string BuildSubFormula(FormulaAstNode node, string sourceFormula)
+    {
+        if (node.SourceLength > 0 &&
+            node.SourceStart >= 0 &&
+            node.SourceStart + node.SourceLength <= sourceFormula.Length)
+        {
+            var slice = sourceFormula.Substring(node.SourceStart, node.SourceLength);
+            return slice.StartsWith("=", StringComparison.Ordinal) ? slice : "=" + slice;
+        }
+
+        return "=" + node.Label + "(" + string.Join(",", node.Children.ConvertAll(ChildExpression)) + ")";
+    }
+
+    private static string ChildExpression(FormulaAstNode child)
+    {
+        if (child.IsStructural)
+        {
+            return string.Join(",", child.Children.ConvertAll(ChildExpression));
+        }
+
+        if (child.Kind == FormulaNodeKind.Function && child.Children.Count > 0)
+        {
+            return child.Label + "(" + string.Join(",", child.Children.ConvertAll(ChildExpression)) + ")";
+        }
+
+        return child.Label;
     }
 }

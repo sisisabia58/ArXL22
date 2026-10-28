@@ -14,6 +14,13 @@ public enum ExplorerCloseMode
     RestorePrevious
 }
 
+public sealed class ExplorerTreeGuide
+{
+    public bool FullVertical { get; set; }
+    public bool Elbow { get; set; }
+    public bool ElbowContinues { get; set; }
+}
+
 public sealed class ExplorerTreeRow : INotifyPropertyChanged
 {
     public string Id { get; set; } = "";
@@ -44,7 +51,12 @@ public sealed class ExplorerTreeRow : INotifyPropertyChanged
 
     public string Glyph => ExplorerTreeChrome.Glyph(HasChildren, IsExpanded);
 
+    public bool ShowDropLine => HasChildren && IsExpanded;
+
     public double IndentWidth => ExplorerTreeChrome.IndentWidth(Indent);
+
+    public System.Collections.Generic.IList<ExplorerTreeGuide> Guides { get; set; } =
+        new System.Collections.Generic.List<ExplorerTreeGuide>();
 
     public string ComponentPrefix
     {
@@ -118,20 +130,44 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         }
     }
 
+    private bool _isEditingFormula;
+    public bool IsEditingFormula
+    {
+        get => _isEditingFormula;
+        private set
+        {
+            if (_isEditingFormula == value) return;
+            _isEditingFormula = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string? FormulaEditSeed { get; private set; }
+    public int FormulaEditCaret { get; private set; } = -1;
+
     public event PropertyChangedEventHandler? PropertyChanged;
     public event System.Action<ExplorerTreeRow>? NavigateRequested;
     public event System.Action<ExplorerCloseMode>? CloseRequested;
     public event System.Action? DrillRequested;
     public event System.Action? RefreshRequested;
+    public event System.Action? ExplorePrecedentsRequested;
+    public event System.Action? ExploreDependentsRequested;
+    public event System.Action? GoToExcelRequested;
+    public event System.Action<string>? FormulaApplyRequested;
 
     public void LoadTree(FormulaAstNode root, string formulaText)
     {
         _root = root;
         _isFullyExpanded = true;
+        FormulaEditSeed = null;
+        IsEditingFormula = false;
         FormulaAstParser.CollapseFunctions(root);
         FormulaText = formulaText;
         RefreshRows();
-        if (Rows.Count > 0) ApplySelection(0, navigate: false);
+        if (Rows.Count > 0)
+        {
+            ApplySelection(ExplorerLocations.OpeningSelectionIndex(Rows.Count), navigate: false);
+        }
     }
 
     public void RefreshRows()
@@ -140,54 +176,7 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         Rows.Clear();
         if (_root == null) return;
 
-        var depthById = new System.Collections.Generic.Dictionary<string, int>();
-        void Walk(FormulaAstNode node, int depth)
-        {
-            depthById[node.Id] = depth;
-            if (!node.IsExpanded) return;
-            foreach (var child in node.Children) Walk(child, depth + 1);
-        }
-
-        Walk(_root, 0);
-
-        foreach (var node in FormulaAstParser.FlattenVisible(_root))
-        {
-            var rawLocation = node.Location ?? "";
-            var qualified = string.IsNullOrWhiteSpace(rawLocation)
-                ? ""
-                : TraceUtils.QualifyAddress(rawLocation, RootAddress);
-            var location = node.Kind is FormulaNodeKind.Literal or FormulaNodeKind.Operator or FormulaNodeKind.Error
-                ? ""
-                : TraceUtils.FormatExplorerLocation(qualified, RootAddress);
-            var component = node.Label;
-            if (node.Kind == FormulaNodeKind.Root &&
-                string.Equals(node.Label, node.Location, System.StringComparison.OrdinalIgnoreCase))
-            {
-                var parsed = TraceUtils.ParseWorksheetScopedAddress(node.Label);
-                if (parsed != null)
-                {
-                    component = parsed.RangeAddress;
-                }
-            }
-
-            Rows.Add(new ExplorerTreeRow
-            {
-                Id = node.Id,
-                Indent = depthById.TryGetValue(node.Id, out var depth) ? depth : 0,
-                Component = component,
-                Info = node.Info,
-                Value = node.Value ?? "",
-                Location = location,
-                NavigationAddress = qualified,
-                IsActiveBranch = node.IsActiveBranch,
-                HasChildren = node.Children.Count > 0,
-                IsExpanded = node.IsExpanded,
-                IsSelected = false,
-                SourceStart = node.SourceStart,
-                SourceLength = node.SourceLength,
-                Kind = node.Kind
-            });
-        }
+        AppendNode(_root, 0, System.Array.Empty<bool>(), isLast: true);
 
         if (selectedId != null)
         {
@@ -289,11 +278,15 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
 
     public void RequestRefresh() => RefreshRequested?.Invoke();
 
-    public void SelectFormulaToken(int charIndex, bool additive)
+    /// <summary>
+    /// Selects the tree row for a formula reference and asks Excel to jump there.
+    /// Returns false when the character is not a cell or range reference.
+    /// </summary>
+    public bool SelectFormulaToken(int charIndex, bool additive)
     {
         var sheet = TraceUtils.ParseWorksheetScopedAddress(RootAddress)?.WorksheetName ?? "";
         var hit = FormulaTokenHits.HitTest(FormulaText, sheet, charIndex);
-        if (hit == null || string.IsNullOrWhiteSpace(hit.Address)) return;
+        if (hit == null || string.IsNullOrWhiteSpace(hit.Address)) return false;
 
         if (!additive)
         {
@@ -303,24 +296,46 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         var firstMatch = -1;
         for (var i = 0; i < Rows.Count; i++)
         {
-            if (!TraceUtils.AddressesReferToSameRange(hit.Address, Rows[i].Location)) continue;
+            if (!RowPointsAt(Rows[i], hit.Address!)) continue;
             Rows[i].IsSelected = true;
             if (firstMatch < 0) firstMatch = i;
         }
 
-        if (firstMatch < 0) return;
-        if (_selectedIndex != firstMatch)
+        ExplorerTreeRow target;
+        if (firstMatch >= 0)
         {
-            _selectedIndex = firstMatch;
-            OnPropertyChanged(nameof(SelectedIndex));
+            target = Rows[firstMatch];
+            if (string.IsNullOrWhiteSpace(target.NavigationAddress))
+            {
+                target.NavigationAddress = hit.Address!;
+            }
+
+            if (_selectedIndex != firstMatch)
+            {
+                _selectedIndex = firstMatch;
+                OnPropertyChanged(nameof(SelectedIndex));
+            }
+            else
+            {
+                OnPropertyChanged(nameof(SelectedIndex));
+            }
         }
         else
         {
-            OnPropertyChanged(nameof(SelectedIndex));
+            target = new ExplorerTreeRow
+            {
+                NavigationAddress = hit.Address!,
+                Location = hit.Address!
+            };
         }
 
-        NavigateRequested?.Invoke(Rows[firstMatch]);
+        NavigateRequested?.Invoke(target);
+        return true;
     }
+
+    private static bool RowPointsAt(ExplorerTreeRow row, string address) =>
+        TraceUtils.AddressesReferToSameRange(address, row.NavigationAddress) ||
+        TraceUtils.AddressesReferToSameRange(address, row.Location);
 
     public IReadOnlyList<FormulaHighlightSpan> SelectedFormulaSpans()
     {
@@ -372,6 +387,129 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     public void RequestKeepClose() => CloseRequested?.Invoke(ExplorerCloseMode.KeepSelection);
 
     public void RequestBackClose() => CloseRequested?.Invoke(ExplorerCloseMode.RestorePrevious);
+
+    public void BeginFormulaEdit(string? typedPrefix = null, int caret = -1)
+    {
+        if (IsEditingFormula) return;
+        FormulaEditSeed = typedPrefix;
+        FormulaEditCaret = caret;
+        IsEditingFormula = true;
+        OnPropertyChanged(nameof(FormulaEditSeed));
+    }
+
+    public void CancelFormulaEdit()
+    {
+        if (!IsEditingFormula) return;
+        FormulaEditSeed = null;
+        FormulaEditCaret = -1;
+        IsEditingFormula = false;
+    }
+
+    public void ApplyFormulaEdit(string formula)
+    {
+        var text = FormulaEdit.Normalize(formula);
+        FormulaApplyRequested?.Invoke(text);
+        FormulaEditSeed = null;
+        FormulaEditCaret = -1;
+        IsEditingFormula = false;
+        if (text.Length > 0)
+        {
+            FormulaText = text;
+        }
+    }
+
+    public void RequestExplorePrecedents() => ExplorePrecedentsRequested?.Invoke();
+
+    public void RequestExploreDependents() => ExploreDependentsRequested?.Invoke();
+
+    public void RequestGoToExcel() => GoToExcelRequested?.Invoke();
+
+    public void ReselectCurrent()
+    {
+        if (_selectedIndex < 0 || _selectedIndex >= Rows.Count) return;
+        NavigateRequested?.Invoke(Rows[_selectedIndex]);
+    }
+
+    public string SelectedNavigationAddress()
+    {
+        if (_selectedIndex >= 0 && _selectedIndex < Rows.Count &&
+            !string.IsNullOrWhiteSpace(Rows[_selectedIndex].NavigationAddress))
+        {
+            return Rows[_selectedIndex].NavigationAddress;
+        }
+
+        return RootAddress;
+    }
+
+    public string SelectedAnchorAddress()
+    {
+        var address = SelectedNavigationAddress();
+        if (string.IsNullOrWhiteSpace(address)) return RootAddress;
+        var anchor = TraceUtils.VisibleAnchor(address);
+        if (string.IsNullOrEmpty(anchor)) return address;
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
+        if (parsed == null) return TraceUtils.QualifyAddress(anchor, RootAddress);
+        return $"'{parsed.WorksheetName}'!{anchor}";
+    }
+
+    private void AppendNode(FormulaAstNode node, int depth, bool[] ancestorContinues, bool isLast)
+    {
+        var guides = new System.Collections.Generic.List<ExplorerTreeGuide>(depth);
+        for (var level = 0; level < depth; level++)
+        {
+            var elbow = level == depth - 1;
+            guides.Add(new ExplorerTreeGuide
+            {
+                FullVertical = !elbow && ancestorContinues[level],
+                Elbow = elbow,
+                ElbowContinues = elbow && !isLast
+            });
+        }
+
+        var navigation = ExplorerLocations.NavigationAddress(node, RootAddress);
+        var location = string.IsNullOrEmpty(navigation)
+            ? ""
+            : TraceUtils.FormatExplorerLocation(navigation, RootAddress);
+        var component = node.Label;
+        if (node.Kind == FormulaNodeKind.Root &&
+            string.Equals(node.Label, node.Location, System.StringComparison.OrdinalIgnoreCase))
+        {
+            var parsed = TraceUtils.ParseWorksheetScopedAddress(node.Label);
+            if (parsed != null)
+            {
+                component = parsed.RangeAddress;
+            }
+        }
+
+        Rows.Add(new ExplorerTreeRow
+        {
+            Id = node.Id,
+            Indent = depth,
+            Guides = guides,
+            Component = component,
+            Info = node.Info,
+            Value = ExplorerLocations.DisplayValue(node, _root),
+            Location = location,
+            NavigationAddress = navigation,
+            IsActiveBranch = node.IsActiveBranch,
+            HasChildren = node.Children.Count > 0,
+            IsExpanded = node.IsExpanded,
+            IsSelected = false,
+            SourceStart = node.SourceStart,
+            SourceLength = node.SourceLength,
+            Kind = node.Kind
+        });
+
+        if (!node.IsExpanded || node.Children.Count == 0) return;
+
+        var childContinues = new bool[depth + 1];
+        for (var level = 0; level < depth; level++) childContinues[level] = ancestorContinues[level];
+        childContinues[depth] = !isLast;
+        for (var i = 0; i < node.Children.Count; i++)
+        {
+            AppendNode(node.Children[i], depth + 1, childContinues, i == node.Children.Count - 1);
+        }
+    }
 
     private void SelectById(string id)
     {

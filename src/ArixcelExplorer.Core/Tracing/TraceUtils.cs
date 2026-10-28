@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace ArixcelExplorer.Core.Tracing;
@@ -22,6 +23,9 @@ public static class TraceUtils
     public const int DefaultTraceSafetyLimit = 500;
     public const int MaxTraceSafetyLimit = 5000;
     public const int MaxTraceRows = DefaultTraceSafetyLimit;
+    public const string ArrayValue = "<array>";
+
+    private static readonly Regex CvErrToken = new(@"-21468262\d{2}", RegexOptions.Compiled);
 
     public static int SanitizeTraceDepth(object? raw)
     {
@@ -52,43 +56,266 @@ public static class TraceUtils
     public static string FormatTraceValue(object? value)
     {
         if (value == null || value is DBNull) return "";
-        if (value is string s) return s;
         if (value is bool b) return b ? "TRUE" : "FALSE";
-        if (value is double or float or decimal or int or long or short or byte)
+        if (value is string s) return FormatTraceText(s);
+        if (TryFormatExcelError(value, out var errorName)) return errorName;
+        if (value is double d) return FormatGeneralNumber(d);
+        if (value is float f) return FormatGeneralNumber(f);
+        if (value is decimal m) return FormatGeneralNumber(m);
+        if (value is int or long or short or byte)
         {
-            return Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? "";
+            return FormatGroupedInteger(Convert.ToDouble(value, CultureInfo.InvariantCulture));
         }
 
         if (value is Array array)
         {
-            var flat = Flatten(array);
-            if (flat.Count == 0) return "";
-            if (flat.Count < 4) return string.Join(", ", flat);
-            return flat.Count + " values";
+            return FormatArrayValue(array);
         }
 
         var raw = value.ToString() ?? "";
         if (raw.Contains("System.Object")) return "";
-        return raw;
+        return FormatTraceText(raw);
     }
 
-    private static System.Collections.Generic.List<string> Flatten(Array array)
+    /// <summary>
+    /// A failed Excel Evaluate comes back as a CVErr HRESULT (for example -2146826273 = #VALUE!).
+    /// That integer must not be shown next to a real cell value.
+    /// </summary>
+    public static bool TryFormatExcelError(object? value, out string name)
     {
-        var items = new System.Collections.Generic.List<string>();
+        name = "";
+        long? code = value switch
+        {
+            int i => i,
+            long l => l,
+            short sh => sh,
+            byte by => by,
+            double d when IsIntegral(d) && d >= int.MinValue && d <= int.MaxValue => (long)Math.Round(d),
+            float f when IsIntegral(f) && f >= int.MinValue && f <= int.MaxValue => (long)Math.Round(f),
+            decimal m when m == decimal.Truncate(m) && m >= int.MinValue && m <= int.MaxValue => (long)m,
+            string s when long.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
+        if (code == null) return false;
+        name = ExcelErrorName(code.Value);
+        return name.Length > 0;
+    }
+
+    public static bool IsUsableFormulaResult(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var trimmed = text!.Trim();
+        if (IsExcelErrorName(trimmed)) return false;
+        if (TryFormatExcelError(trimmed, out _)) return false;
+        return true;
+    }
+
+    public static bool IsMultiCellRange(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return false;
+        var text = address!;
+        if (!IsRangeAddress(text)) return false;
+        var parsed = ParseWorksheetScopedAddress(text);
+        var range = (parsed?.RangeAddress ?? text.Trim()).Replace("$", "");
+        var parts = range.Split(':');
+        return parts.Length == 2 &&
+               !string.Equals(parts[0], parts[1], StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Small integers stay plain (6, 4). Larger numbers pick up the current culture's thousands separator.
+    /// </summary>
+    public static string FormatGeneralNumber(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value)) return "";
+        if (TryFormatExcelError(value, out var errorName)) return errorName;
+        var rounded = Math.Round(value, 12, MidpointRounding.AwayFromZero);
+        var nearest = Math.Round(rounded, MidpointRounding.AwayFromZero);
+        if (Math.Abs(rounded - nearest) < 1e-9)
+        {
+            return FormatGroupedInteger(nearest);
+        }
+
+        return rounded.ToString("#,0.############", CultureInfo.CurrentCulture);
+    }
+
+    public static string FormatGeneralNumber(decimal value)
+    {
+        if (TryFormatExcelError(value, out var errorName)) return errorName;
+        if (value == decimal.Truncate(value))
+        {
+            return FormatGroupedInteger((double)decimal.Truncate(value));
+        }
+
+        return value.ToString("#,0.#############################", CultureInfo.CurrentCulture);
+    }
+
+    private static string FormatTraceText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return "";
+        if (text == ArrayValue) return text;
+        var trimmed = text.Trim();
+        if (IsExcelErrorName(trimmed)) return trimmed;
+        if (TryFormatExcelError(trimmed, out var onlyError)) return onlyError;
+
+        if (!CvErrToken.IsMatch(trimmed)) return FormatNumericText(trimmed);
+
+        var stripped = CvErrToken.Replace(trimmed, " ");
+        stripped = Regex.Replace(stripped, @"[\s,;]+", " ").Trim();
+        if (stripped.Length == 0) return "";
+        return FormatNumericText(stripped);
+    }
+
+    private static string FormatNumericText(string text)
+    {
+        if (TryParseFlexibleNumber(text, out var number)) return FormatGeneralNumber(number);
+        var normalized = NormalizeNumericText(text);
+        if (!string.Equals(normalized, text, StringComparison.Ordinal) &&
+            TryParseFlexibleNumber(normalized, out number))
+        {
+            return FormatGeneralNumber(number);
+        }
+
+        return normalized;
+    }
+
+    private static string FormatArrayValue(Array array)
+    {
+        var count = 0;
+        string? single = null;
+        if (!CollectArrayValues(array, ref count, ref single)) return ArrayValue;
+        if (count <= 0) return "";
+        if (count == 1) return single ?? "";
+        return ArrayValue;
+    }
+
+    private static bool CollectArrayValues(Array array, ref int count, ref string? single)
+    {
         foreach (var item in array)
         {
             if (item is Array nested)
             {
-                items.AddRange(Flatten(nested));
+                if (!CollectArrayValues(nested, ref count, ref single)) return false;
+                continue;
             }
-            else
+
+            if (item == null || item is DBNull || TryFormatExcelError(item, out _)) continue;
+            var formatted = FormatTraceValue(item);
+            if (formatted.Length == 0 || formatted == ArrayValue || IsExcelErrorName(formatted)) continue;
+            count += 1;
+            if (count == 1) single = formatted;
+            if (count >= 2) return false;
+        }
+
+        return true;
+    }
+
+    private static string FormatGroupedInteger(double value)
+    {
+        var nearest = Math.Round(value, MidpointRounding.AwayFromZero);
+        if (Math.Abs(nearest) < 1000)
+        {
+            return nearest.ToString("0", CultureInfo.InvariantCulture);
+        }
+
+        return nearest.ToString("#,0", CultureInfo.CurrentCulture);
+    }
+
+    private static bool TryParseFlexibleNumber(string text, out double value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var trimmed = text.Trim();
+        if (Regex.IsMatch(trimmed, @"^-?\d+$"))
+        {
+            return double.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        var match = Regex.Match(trimmed, @"^(-?\d+)([.,])(\d+)$");
+        if (!match.Success) return false;
+        var fraction = match.Groups[3].Value.TrimEnd('0');
+        var canonical = fraction.Length == 0
+            ? match.Groups[1].Value
+            : match.Groups[1].Value + "." + fraction;
+        return double.TryParse(canonical, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool IsIntegral(double value) =>
+        !double.IsNaN(value) && !double.IsInfinity(value) &&
+        Math.Abs(value - Math.Round(value, MidpointRounding.AwayFromZero)) < 1e-6;
+
+    private static bool IsExcelErrorName(string text) =>
+        text is "#NULL!" or "#DIV/0!" or "#VALUE!" or "#REF!" or "#NAME?" or "#NUM!" or "#N/A" or "#GETTING_DATA";
+
+    private static string ExcelErrorName(long code) => code switch
+    {
+        -2146826288 => "#NULL!",
+        -2146826281 => "#DIV/0!",
+        -2146826273 => "#VALUE!",
+        -2146826265 => "#REF!",
+        -2146826259 => "#NAME?",
+        -2146826252 => "#NUM!",
+        -2146826246 => "#N/A",
+        -2146826245 => "#GETTING_DATA",
+        _ => ""
+    };
+
+    public static string NormalizeNumericText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return text ?? "";
+        var trimmed = text.Trim();
+        var match = Regex.Match(trimmed, @"^(-?\d+)([.,])(\d+)$");
+        if (!match.Success) return text;
+        var fraction = match.Groups[3].Value.TrimEnd('0');
+        if (fraction.Length == 0) return match.Groups[1].Value;
+        return match.Groups[1].Value + match.Groups[2].Value + fraction;
+    }
+
+    /// <summary>
+    /// Smallest single range covering every address. D4 and E4 on one sheet become 'Sheet'!D4:E4.
+    /// </summary>
+    public static string BoundingAddress(System.Collections.Generic.IEnumerable<string?> addresses)
+    {
+        string? sheet = null;
+        var minRow = int.MaxValue;
+        var minCol = int.MaxValue;
+        var maxRow = -1;
+        var maxCol = -1;
+        var any = false;
+        foreach (var address in addresses)
+        {
+            if (string.IsNullOrWhiteSpace(address)) continue;
+            var parsed = ParseWorksheetScopedAddress(address!);
+            var range = parsed?.RangeAddress ?? address!.Trim();
+            if (!IsRangeAddress(range)) continue;
+            var worksheet = parsed?.WorksheetName;
+            if (sheet == null)
             {
-                var formatted = FormatTraceValue(item);
-                if (formatted.Length > 0) items.Add(formatted);
+                sheet = worksheet;
+            }
+            else if (!string.Equals(sheet, worksheet, StringComparison.OrdinalIgnoreCase))
+            {
+                return "";
+            }
+
+            foreach (var part in range.Split(':'))
+            {
+                var cell = ParseCellAddress(part);
+                if (cell == null) continue;
+                any = true;
+                minRow = Math.Min(minRow, cell.Value.Row);
+                maxRow = Math.Max(maxRow, cell.Value.Row);
+                minCol = Math.Min(minCol, cell.Value.Col);
+                maxCol = Math.Max(maxCol, cell.Value.Col);
             }
         }
 
-        return items;
+        if (!any) return "";
+        var start = ColumnLetters(minCol) + (minRow + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var end = ColumnLetters(maxCol) + (maxRow + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var a1 = start == end ? start : start + ":" + end;
+        if (string.IsNullOrEmpty(sheet)) return a1;
+        return $"'{sheet}'!{a1}";
     }
 
     public static string FormatTraceFormula(object? value)
@@ -144,11 +371,11 @@ public static class TraceUtils
         if (parsedLeft != null && parsedRight != null)
         {
             return string.Equals(parsedLeft.WorksheetName, parsedRight.WorksheetName, StringComparison.OrdinalIgnoreCase) &&
-                   string.Equals(parsedLeft.RangeAddress, parsedRight.RangeAddress, StringComparison.OrdinalIgnoreCase);
+                   string.Equals(StripAbsolute(parsedLeft.RangeAddress), StripAbsolute(parsedRight.RangeAddress), StringComparison.OrdinalIgnoreCase);
         }
 
-        var leftRange = parsedLeft?.RangeAddress ?? leftText;
-        var rightRange = parsedRight?.RangeAddress ?? rightText;
+        var leftRange = StripAbsolute(parsedLeft?.RangeAddress ?? leftText);
+        var rightRange = StripAbsolute(parsedRight?.RangeAddress ?? rightText);
         return string.Equals(leftRange, rightRange, StringComparison.OrdinalIgnoreCase);
     }
 

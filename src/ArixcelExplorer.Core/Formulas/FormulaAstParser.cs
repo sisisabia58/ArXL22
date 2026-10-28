@@ -28,6 +28,18 @@ public sealed class FormulaAstNode
     public bool IsActiveBranch { get; set; }
     public bool IsExpanded { get; set; } = true;
     public bool FlattenIntoParent { get; set; }
+
+    /// <summary>
+    /// Synthetic Explorer row (the SUMIFS Filter group). Not an Excel function call.
+    /// </summary>
+    public bool IsStructural { get; set; }
+
+    /// <summary>
+    /// Original formula, including the leading '=', so argument spans can be evaluated.
+    /// Set on the root node.
+    /// </summary>
+    public string SourceFormula { get; set; } = "";
+
     public string? ParentId { get; set; }
     public int SourceStart { get; set; }
     public int SourceLength { get; set; }
@@ -56,7 +68,8 @@ public static class FormulaAstParser
             Kind = FormulaNodeKind.Root,
             Label = cellAddress,
             Value = evaluatedValue,
-            Location = cellAddress
+            Location = cellAddress,
+            SourceFormula = formula ?? ""
         };
 
         if (string.IsNullOrWhiteSpace(normalized))
@@ -70,6 +83,7 @@ public static class FormulaAstParser
         {
             var (node, _) = ParseComparison(normalized, 0, root.Id, cellAddress);
             AttachTopLevel(root, node);
+            ExtendTopLevelExpression(root, normalized);
             QualifyReferences(root, cellAddress);
         }
         catch
@@ -84,7 +98,7 @@ public static class FormulaAstParser
             });
         }
 
-        ApplyDisplayOffset(root, DisplayPrefixLength(formula));
+        ApplyDisplayOffset(root, DisplayPrefixLength(formula ?? ""));
         return root;
     }
 
@@ -165,19 +179,20 @@ public static class FormulaAstParser
 
     private static void AttachTopLevel(FormulaAstNode root, FormulaAstNode node)
     {
-        if (node.FlattenIntoParent && node.Children.Count > 0)
-        {
-            foreach (var child in node.Children)
-            {
-                child.ParentId = root.Id;
-                root.Children.Add(child);
-            }
-
-            return;
-        }
-
+        // Arixcel keeps the arithmetic expression (D4+E4) as its own row under the
+        // origin cell. FlattenIntoParent used to splice those children onto the root.
+        node.FlattenIntoParent = false;
         node.ParentId = root.Id;
         root.Children.Add(node);
+    }
+
+    private static void ExtendTopLevelExpression(FormulaAstNode root, string normalized)
+    {
+        if (root.Children.Count != 1 || root.Children[0].Kind != FormulaNodeKind.Operator) return;
+        var child = root.Children[0];
+        if (child.SourceStart != 0 || child.SourceLength >= normalized.Length) return;
+        child.SourceLength = normalized.Length;
+        child.Label = normalized;
     }
 
     private static void QualifyReferences(FormulaAstNode node, string cellAddress)
@@ -418,6 +433,7 @@ public static class FormulaAstParser
             node.Children[i].Info = FunctionArgInfo.LabelFor(name, i);
         }
 
+        GroupCriteriaFilters(node);
         end = args.EndIndex + 1;
         node.SourceLength = end - start;
         return true;
@@ -432,6 +448,7 @@ public static class FormulaAstParser
         var nodes = new List<FormulaAstNode>();
         var index = start;
         var depth = 1;
+        var brace = 0;
         var argStart = start;
         var inString = false;
 
@@ -462,7 +479,9 @@ public static class FormulaAstParser
                 continue;
             }
 
-            if (ch == '(') depth += 1;
+            if (ch == '{') brace += 1;
+            else if (ch == '}') brace = Math.Max(0, brace - 1);
+            else if (ch == '(') depth += 1;
             else if (ch == ')')
             {
                 depth -= 1;
@@ -473,7 +492,7 @@ public static class FormulaAstParser
                     return (nodes, index);
                 }
             }
-            else if (ch == ',' && depth == 1)
+            else if ((ch == ',' || ch == ';') && depth == 1 && brace == 0)
             {
                 var slice = ParseSlice(input, argStart, index, functionId, contextLocation);
                 if (slice != null) nodes.Add(slice);
@@ -694,6 +713,99 @@ public static class FormulaAstParser
     }
 
     private static int SourceEnd(FormulaAstNode node) => node.SourceStart + node.SourceLength;
+
+    private enum CriteriaLayout
+    {
+        None,
+        LeadingAggregateThenPairs,
+        PairsOnly,
+        PairThenOptionalAggregate
+    }
+
+    private static CriteriaLayout LayoutFor(string functionName) => functionName switch
+    {
+        "SUMIFS" or "AVERAGEIFS" or "MINIFS" or "MAXIFS" => CriteriaLayout.LeadingAggregateThenPairs,
+        "COUNTIFS" => CriteriaLayout.PairsOnly,
+        "SUMIF" or "COUNTIF" or "AVERAGEIF" => CriteriaLayout.PairThenOptionalAggregate,
+        _ => CriteriaLayout.None
+    };
+
+    /// <summary>
+    /// Arixcel nests each criteria_rangeN + criteriaN pair under a Filter row.
+    /// </summary>
+    private static void GroupCriteriaFilters(FormulaAstNode function)
+    {
+        var layout = LayoutFor(function.Label);
+        if (layout == CriteriaLayout.None || function.Children.Count == 0) return;
+
+        var source = function.Children;
+        var grouped = new List<FormulaAstNode>();
+        if (layout == CriteriaLayout.PairThenOptionalAggregate)
+        {
+            if (source.Count >= 2)
+            {
+                grouped.Add(MakeFilter(function, source[0], source[1]));
+                for (var i = 2; i < source.Count; i++) grouped.Add(source[i]);
+            }
+            else
+            {
+                grouped.AddRange(source);
+            }
+        }
+        else
+        {
+            var index = 0;
+            if (layout == CriteriaLayout.LeadingAggregateThenPairs)
+            {
+                grouped.Add(source[0]);
+                index = 1;
+            }
+
+            while (index + 1 < source.Count)
+            {
+                grouped.Add(MakeFilter(function, source[index], source[index + 1]));
+                index += 2;
+            }
+
+            while (index < source.Count)
+            {
+                grouped.Add(source[index]);
+                index += 1;
+            }
+        }
+
+        var filterNumber = 1;
+        foreach (var child in grouped)
+        {
+            if (!child.IsStructural) continue;
+            child.Label = "Filter " + filterNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            child.Info = "<filter>";
+            filterNumber += 1;
+        }
+
+        function.Children = grouped;
+    }
+
+    private static FormulaAstNode MakeFilter(FormulaAstNode function, FormulaAstNode range, FormulaAstNode criteria)
+    {
+        var start = Math.Min(range.SourceStart, criteria.SourceStart);
+        var end = Math.Max(range.SourceStart + range.SourceLength, criteria.SourceStart + criteria.SourceLength);
+        var filter = new FormulaAstNode
+        {
+            Kind = FormulaNodeKind.Function,
+            Label = "Filter",
+            IsStructural = true,
+            ParentId = function.Id,
+            SourceStart = start,
+            SourceLength = Math.Max(0, end - start),
+            IsExpanded = true
+        };
+        range.ParentId = filter.Id;
+        criteria.ParentId = filter.Id;
+        filter.Children.Add(range);
+        filter.Children.Add(criteria);
+        return filter;
+    }
 
     public static void SetActiveIfBranch(FormulaAstNode root, int chosenIndex)
     {
