@@ -131,6 +131,7 @@ public static class AddInCoordinator
         {
             try
             {
+                if (window != null && window.IsClosing) return;
                 if (string.IsNullOrWhiteSpace(row.Address)) return;
                 var hwnd = window?.WindowHandle ?? IntPtr.Zero;
                 _traceService.NavigateToAddress(row.Address, stealFocus: false, reclaimHwnd: hwnd);
@@ -353,6 +354,7 @@ public static class AddInCoordinator
         {
             try
             {
+                if (window != null && window.IsClosing) return;
                 if (string.IsNullOrWhiteSpace(row.NavigationAddress) && string.IsNullOrWhiteSpace(row.Location)) return;
                 var hwnd = window?.WindowHandle ?? IntPtr.Zero;
                 var target = string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.Location : row.NavigationAddress;

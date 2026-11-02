@@ -99,6 +99,31 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
+    public void Collapsed_index_still_lists_array_and_row_for_fill_capture()
+    {
+        const string origin = "'S'!K21";
+        var tree = FormulaAstParser.Parse("=INDEX(K22:K24,$K$20)", origin, "0.14");
+        FormulaAstParser.CollapseFunctions(tree);
+        var visible = FormulaAstParser.FlattenVisible(tree).Select(node => node.Label).ToArray();
+        Assert.DoesNotContain(visible, label => label.Contains("K22:K24"));
+
+        var addresses = ExplorerLocations.CollectNavigationAddresses(tree, origin)
+            .Select(address => address.Replace("$", ""))
+            .ToArray();
+        Assert.Contains(addresses, address => address.EndsWith("K22:K24"));
+        Assert.Contains(addresses, address => address.EndsWith("K20"));
+    }
+
+    [Fact]
+    public void No_fill_requires_pattern_xl_none_not_just_color_index()
+    {
+        Assert.True(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, InteriorFill.NoFillColorIndex));
+        Assert.True(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, pattern: null));
+        Assert.False(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, pattern: 1));
+        Assert.False(InteriorFill.IsNoFill(6, pattern: 1));
+    }
+
+    [Fact]
     public void FormatTraceValue_does_not_emit_system_object_array()
     {
         object[,] block =
@@ -111,6 +136,7 @@ public sealed class ExplorerTreeTests
         Assert.Equal("15", TraceUtils.FormatTraceValue(15d));
         Assert.Equal("", TraceUtils.FormatTraceValue(null));
         Assert.Equal("hello", TraceUtils.FormatTraceValue("hello"));
+        Assert.Equal("", TraceUtils.FormatTraceValue("System.__ComObject"));
         Assert.Equal("15", TraceUtils.FormatTraceValue(new object[] { 15d }));
     }
 
@@ -189,10 +215,10 @@ public sealed class ExplorerTreeTests
                 "$D$8",
                 "4",
                 "$D$7",
-                "E31>=$D$16",
+                "(E31>=$D$16)",
                 "E31",
                 "$D$16",
-                "E31<=$D$17",
+                "(E31<=$D$17)",
                 "E31",
                 "$D$17"
             },
@@ -247,6 +273,105 @@ public sealed class ExplorerTreeTests
         Assert.Equal("'S'!D4:E4", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'S'!E4" }));
         Assert.Equal("'S'!D4", TraceUtils.BoundingAddress(new[] { "'S'!$D$4" }));
         Assert.Equal("", TraceUtils.BoundingAddress(new[] { "'S'!D4", "'Other'!E4" }));
+    }
+
+    [Fact]
+    public void PrecedentUnion_keeps_a_solid_block_and_splits_gaps()
+    {
+        Assert.Equal("'S'!D4:E4", TraceUtils.PrecedentUnion(new[] { "'S'!D4", "'S'!E4" }));
+        Assert.Equal("'S'!K21,'S'!V65", TraceUtils.PrecedentUnion(new[] { "'S'!$K$21", "'S'!V65" }));
+        Assert.Equal("'S'!K22:K24,'S'!K20", TraceUtils.PrecedentUnion(new[] { "'S'!K22:K24", "'S'!$K$20" }));
+        Assert.Equal("", TraceUtils.PrecedentUnion(new[] { "'S'!D4", "'Other'!E4" }));
+        Assert.Equal("K21,V65", TraceUtils.FormatExplorerLocation("'S'!K21,'S'!V65", "'S'!V66"));
+        Assert.Equal("K21", TraceUtils.VisibleAnchor("'S'!K21,'S'!V65"));
+    }
+
+    [Fact]
+    public void Power_over_parenthesized_sum_keeps_grouping_parentheses()
+    {
+        const string formula = "=1/(1+$K$21)^V65";
+        const string origin = "'Discounting Factor'!V66";
+        var rows = FormulaAstParser.FlattenVisible(FormulaAstParser.Parse(formula, origin, "0.936585811582"));
+        var labels = rows.Select(DisplayLabel).ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "V66",
+                "1/(1+$K$21)^V65",
+                "1",
+                "(1+$K$21)^V65",
+                "(1+$K$21)",
+                "1",
+                "$K$21",
+                "V65"
+            },
+            labels);
+        Assert.DoesNotContain("1+$K$21)^V65", labels);
+
+        foreach (var node in rows.Where(node => node.Kind != FormulaNodeKind.Root && node.SourceLength > 0))
+        {
+            Assert.Equal(node.Label, formula.Substring(node.SourceStart, node.SourceLength));
+        }
+
+        var power = rows.Single(node => node.Label == "(1+$K$21)^V65");
+        Assert.Equal(FormulaNodeKind.Operator, power.Kind);
+        Assert.Equal("'Discounting Factor'!K21,'Discounting Factor'!V65", ExplorerLocations.NavigationAddress(power, origin));
+    }
+
+    [Fact]
+    public void Discounting_formula_highlights_input_cells_not_the_block_between_them()
+    {
+        const string origin = "'Discounting Factor'!V66";
+        const string formula = "=1/(1+$K$21)^V65";
+        var tree = FormulaAstParser.Parse(formula, origin, "0.936585811582");
+        var rows = FormulaAstParser.FlattenVisible(tree);
+        Assert.Equal(FormulaNodeKind.Operator, rows[1].Kind);
+
+        foreach (var row in rows.Where(node => node.Kind == FormulaNodeKind.Operator))
+        {
+            var navigation = ExplorerLocations.NavigationAddress(row, origin);
+            Assert.DoesNotContain("K21:V65", navigation.Replace("$", ""));
+        }
+
+        var expression = ExplorerLocations.NavigationAddress(rows[1], origin);
+        var areas = TraceUtils.SplitAreas(expression);
+        Assert.Equal(2, areas.Count);
+        Assert.Contains(areas, area => area.EndsWith("K21", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(areas, area => area.EndsWith("V65", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("K21,V65", TraceUtils.FormatExplorerLocation(expression, origin));
+        Assert.Equal("'Discounting Factor'!K21", FirstAreaAnchor(expression));
+    }
+
+    [Fact]
+    public void Index_formula_keeps_the_array_and_the_row_number_apart()
+    {
+        const string origin = "'Feasibility'!A1";
+        var tree = FormulaAstParser.Parse("=INDEX(K22:K24;$K$20)", origin, "0.14");
+        var rows = FormulaAstParser.FlattenVisible(tree);
+        var labels = rows.Where(node => node.Kind == FormulaNodeKind.Reference).Select(node => node.Label).ToArray();
+        Assert.Contains("K22:K24", labels);
+        Assert.Contains("$K$20", labels);
+
+        foreach (var row in rows)
+        {
+            var navigation = ExplorerLocations.NavigationAddress(row, origin).Replace("$", "");
+            Assert.DoesNotContain("K20:K24", navigation);
+            Assert.DoesNotContain("K21:V65", navigation);
+        }
+
+        var array = rows.Single(node => node.Label == "K22:K24");
+        Assert.Equal("'Feasibility'!K22:K24", ExplorerLocations.NavigationAddress(array, origin));
+        var rowNum = rows.Single(node => node.Label == "$K$20");
+        Assert.Equal("'Feasibility'!$K$20", ExplorerLocations.NavigationAddress(rowNum, origin));
+    }
+
+    private static string FirstAreaAnchor(string address)
+    {
+        var first = TraceUtils.SplitAreas(address)[0];
+        var anchor = TraceUtils.VisibleAnchor(first);
+        var parsed = TraceUtils.ParseWorksheetScopedAddress(first);
+        return $"'{parsed!.WorksheetName}'!{anchor}";
     }
 
     [Fact]

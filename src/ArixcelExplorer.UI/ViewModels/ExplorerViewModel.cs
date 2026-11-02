@@ -188,6 +188,12 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         }
     }
 
+    public System.Collections.Generic.IReadOnlyList<string> AllNavigationAddresses()
+    {
+        if (_root == null) return new System.Collections.Generic.List<string>();
+        return ExplorerLocations.CollectNavigationAddresses(_root, RootAddress);
+    }
+
     public void SelectRow(int index, bool navigate = true)
     {
         if (index < 0 || index >= Rows.Count) return;
@@ -445,6 +451,8 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     {
         var address = SelectedNavigationAddress();
         if (string.IsNullOrWhiteSpace(address)) return RootAddress;
+        var areas = TraceUtils.SplitAreas(address);
+        if (areas.Count > 0) address = areas[0];
         var anchor = TraceUtils.VisibleAnchor(address);
         if (string.IsNullOrEmpty(anchor)) return address;
         var parsed = TraceUtils.ParseWorksheetScopedAddress(address);

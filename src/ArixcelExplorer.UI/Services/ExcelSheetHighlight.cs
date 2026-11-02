@@ -4,13 +4,15 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ArixcelExplorer.Core.Settings;
+using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.UI.Services;
 
 /// <summary>
-/// Selects a whole dependent or precedent range and paints it. Excel's Goto
-/// during host navigation leaves only the top-left cell selected. Closing the
-/// window restores the interior colors this highlighter changed.
+/// Selects the precedent areas and paints those cells. A multi-area address
+/// such as K21 and V65 is selected and painted as separate areas, not as the
+/// rectangle between them. Closing the window restores the interior colors
+/// this highlighter changed.
 /// </summary>
 internal sealed class ExcelSheetHighlight
 {
@@ -28,9 +30,12 @@ internal sealed class ExcelSheetHighlight
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
-            var range = RangeOf(excel, address!);
-            if (range == null) return;
-            ForEachCell(range, RememberBaseline);
+            foreach (var part in TraceUtils.SplitAreas(address))
+            {
+                var range = RangeOf(excel, part);
+                if (range == null) continue;
+                ForEachCell(range, RememberBaseline);
+            }
         }
         catch
         {
@@ -42,17 +47,38 @@ internal sealed class ExcelSheetHighlight
     {
         if (_closed) return;
         RestoreActive();
-        if (string.IsNullOrWhiteSpace(address)) return;
+        var parts = TraceUtils.SplitAreas(address);
+        if (parts.Count == 0) return;
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
             PreserveSaved(excel, () =>
             {
-                var range = RangeOf(excel, address!);
-                if (range == null) return;
+                var ranges = new List<object>();
+                foreach (var part in parts)
+                {
+                    var range = RangeOf(excel, part);
+                    if (range != null) ranges.Add(range);
+                }
+
+                if (ranges.Count == 0) return;
+                var selection = ranges[0];
+                for (var i = 1; i < ranges.Count; i++)
+                {
+                    try
+                    {
+                        var union = Invoke(excel, "Union", selection, ranges[i]);
+                        if (union != null) selection = union;
+                    }
+                    catch
+                    {
+                        // Paint the areas we could resolve even if Union is unavailable.
+                    }
+                }
+
                 try
                 {
-                    var sheet = Get(range, "Worksheet");
+                    var sheet = Get(ranges[0], "Worksheet");
                     if (sheet != null) Invoke(sheet, "Activate");
                 }
                 catch
@@ -60,25 +86,28 @@ internal sealed class ExcelSheetHighlight
                     // Select still moves to the range when the sheet is already active.
                 }
 
-                Invoke(range, "Select");
-                ScrollWithoutCollapsing(excel, range);
+                Invoke(selection, "Select");
+                ScrollWithoutCollapsing(excel, ranges[0]);
                 var color = ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex);
-                ForEachCell(range, cell =>
+                foreach (var range in ranges)
                 {
-                    try
+                    ForEachCell(range, cell =>
                     {
-                        var fill = Find(_baseline, cell) ?? Own(cell);
-                        if (fill == null) return;
-                        var interior = Get(cell, "Interior");
-                        if (interior == null) return;
-                        Set(interior, "Color", color);
-                        _active.Add(fill);
-                    }
-                    catch
-                    {
-                        // Leave a cell unpainted when its interior cannot be changed.
-                    }
-                });
+                        try
+                        {
+                            var fill = Find(_baseline, cell) ?? Own(cell);
+                            if (fill == null) return;
+                            var interior = Get(cell, "Interior");
+                            if (interior == null) return;
+                            Set(interior, "Color", color);
+                            _active.Add(fill);
+                        }
+                        catch
+                        {
+                            // Leave a cell unpainted when its interior cannot be changed.
+                        }
+                    });
+                }
             });
         }
         catch
@@ -87,16 +116,24 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
+    public void SuspendPaints() => _closed = true;
+
     public void CloseHighlight()
     {
         _closed = true;
         RestoreActive();
         RestoreAll(_baseline);
         RestoreAll(_owned);
+        ClearTransientSheetState();
         try
         {
             System.Windows.Threading.Dispatcher.CurrentDispatcher.BeginInvoke(
-                new Action(() => RestoreAll(_baseline)),
+                new Action(() =>
+                {
+                    RestoreAll(_baseline);
+                    RestoreAll(_owned);
+                    ClearTransientSheetState();
+                }),
                 System.Windows.Threading.DispatcherPriority.ApplicationIdle);
         }
         catch
@@ -120,7 +157,7 @@ internal sealed class ExcelSheetHighlight
             {
                 foreach (var fill in fills)
                 {
-                    Apply(fill);
+                    Apply(excel, fill);
                 }
             });
         }
@@ -128,19 +165,64 @@ internal sealed class ExcelSheetHighlight
         {
             foreach (var fill in fills)
             {
-                Apply(fill);
+                Apply(null, fill);
             }
         }
     }
 
     private void RestoreActive()
     {
+        object? excel = null;
+        try { excel = Marshal.GetActiveObject("Excel.Application"); }
+        catch { excel = null; }
+
         foreach (var fill in _active)
         {
-            Apply(fill);
+            Apply(excel, fill);
         }
 
         _active.Clear();
+    }
+
+    private static void ClearTransientSheetState()
+    {
+        try
+        {
+            var excel = Marshal.GetActiveObject("Excel.Application");
+            PreserveSaved(excel, () =>
+            {
+                try { Set(excel, "CutCopyMode", false); }
+                catch { /* no copy marquee to clear */ }
+
+                try
+                {
+                    var sheet = Get(excel, "ActiveSheet");
+                    if (sheet != null) Invoke(sheet, "ClearArrows");
+                }
+                catch
+                {
+                    // Arrows are optional.
+                }
+
+                try
+                {
+                    var selection = Get(excel, "Selection");
+                    if (selection == null) return;
+                    var count = Count(Get(selection, "Count"));
+                    if (count <= 1) return;
+                    var active = Get(excel, "ActiveCell");
+                    if (active != null) Invoke(active, "Select");
+                }
+                catch
+                {
+                    // Leave a non-range selection alone.
+                }
+            });
+        }
+        catch
+        {
+            // Excel is not reachable from this thread.
+        }
     }
 
     private CellFill? Find(List<CellFill> fills, object cell)
@@ -159,15 +241,49 @@ internal sealed class ExcelSheetHighlight
     {
         var existing = Find(_owned, cell);
         if (existing != null) return existing;
+        var fill = ReadFill(cell);
+        if (fill == null) return null;
+        _owned.Add(fill);
+        return fill;
+    }
+
+    private void RememberBaseline(object cell)
+    {
+        var fill = ReadFill(cell);
+        if (fill == null || string.IsNullOrEmpty(fill.Key) || !_seen.Add(fill.Key)) return;
+        _baseline.Add(fill);
+    }
+
+    private static CellFill? ReadFill(object cell)
+    {
         var key = KeyOf(cell);
         if (string.IsNullOrEmpty(key)) return null;
         try
         {
             var interior = Get(cell, "Interior");
             if (interior == null) return null;
-            var fill = ReadFill(cell, interior, key);
-            _owned.Add(fill);
-            return fill;
+            var colorIndex = ReadInt(interior, "ColorIndex");
+            var pattern = ReadInt(interior, "Pattern");
+            var color = ReadInt(interior, "Color");
+            var theme = ReadInt(interior, "ThemeColor");
+            var tint = ReadDouble(interior, "TintAndShade");
+            var patternColor = ReadInt(interior, "PatternColor");
+            var sheetObj = Get(cell, "Worksheet");
+            var sheet = sheetObj == null ? "" : Get(sheetObj, "Name") as string ?? "";
+            return new CellFill
+            {
+                Cell = cell,
+                Key = key,
+                Sheet = sheet,
+                Row = Count(Get(cell, "Row")),
+                Column = Count(Get(cell, "Column")),
+                NoFill = InteriorFill.IsNoFill(colorIndex ?? InteriorFill.NoFillColorIndex, pattern),
+                Pattern = pattern,
+                Color = color,
+                ThemeColor = theme,
+                TintAndShade = tint,
+                PatternColor = patternColor
+            };
         }
         catch
         {
@@ -175,46 +291,12 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
-    private void RememberBaseline(object cell)
+    private static void Apply(object? excel, CellFill fill)
     {
-        var key = KeyOf(cell);
-        if (string.IsNullOrEmpty(key) || !_seen.Add(key)) return;
         try
         {
+            var cell = ResolveCell(excel, fill) ?? fill.Cell;
             var interior = Get(cell, "Interior");
-            if (interior == null) return;
-            _baseline.Add(ReadFill(cell, interior, key));
-        }
-        catch
-        {
-            _seen.Remove(key);
-        }
-    }
-
-    private static CellFill ReadFill(object cell, object interior, string key)
-    {
-        object? colorIndex = null;
-        object? pattern = null;
-        object? color = null;
-        try { colorIndex = Get(interior, "ColorIndex"); } catch { /* optional */ }
-        try { pattern = Get(interior, "Pattern"); } catch { /* optional */ }
-        try { color = Get(interior, "Color"); } catch { /* optional */ }
-        return new CellFill
-        {
-            Cell = cell,
-            Key = key,
-            NoFill = IsNone(colorIndex),
-            ColorIndex = colorIndex,
-            Pattern = pattern,
-            Color = color
-        };
-    }
-
-    private static void Apply(CellFill fill)
-    {
-        try
-        {
-            var interior = Get(fill.Cell, "Interior");
             if (interior == null) return;
             if (fill.NoFill)
             {
@@ -223,19 +305,27 @@ internal sealed class ExcelSheetHighlight
                 return;
             }
 
-            if (fill.Pattern != null)
+            if (fill.Pattern is int pattern)
             {
-                try { Set(interior, "Pattern", fill.Pattern); } catch { /* color still restores */ }
+                try { Set(interior, "Pattern", pattern); } catch { /* color still restores */ }
             }
 
-            if (fill.ColorIndex != null)
+            if (fill.PatternColor is int patternColor)
             {
-                try { Set(interior, "ColorIndex", fill.ColorIndex); } catch { /* use Color */ }
+                try { Set(interior, "PatternColor", patternColor); } catch { /* main color remains */ }
             }
 
-            if (fill.Color != null)
+            if (fill.ThemeColor is int theme)
             {
-                try { Set(interior, "Color", fill.Color); } catch { /* best effort */ }
+                try { Set(interior, "ThemeColor", theme); } catch { /* use RGB color */ }
+                if (fill.TintAndShade is double tint)
+                {
+                    try { Set(interior, "TintAndShade", tint); } catch { /* theme color remains */ }
+                }
+            }
+            else if (fill.Color is int color)
+            {
+                try { Set(interior, "Color", color); } catch { /* best effort */ }
             }
         }
         catch
@@ -244,16 +334,31 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
-    private static bool IsNone(object? value)
+    private static int? ReadInt(object target, string name)
     {
-        if (value == null) return false;
         try
         {
-            return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture)) == XlNone;
+            var value = Get(target, name);
+            if (value == null) return null;
+            return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture));
         }
         catch
         {
-            return false;
+            return null;
+        }
+    }
+
+    private static double? ReadDouble(object target, string name)
+    {
+        try
+        {
+            var value = Get(target, name);
+            if (value == null) return null;
+            return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -321,6 +426,36 @@ internal sealed class ExcelSheetHighlight
 
     private static void ForEachCell(object range, Action<object> action)
     {
+        object? areas = null;
+        var areaCount = 0;
+        try
+        {
+            areas = Get(range, "Areas");
+            areaCount = areas == null ? 0 : Count(Get(areas, "Count"));
+        }
+        catch
+        {
+            areaCount = 0;
+        }
+
+        if (areaCount > 1 && areas != null)
+        {
+            for (var i = 1; i <= areaCount; i++)
+            {
+                object? area = null;
+                try { area = AreaItem(areas, i); }
+                catch { continue; }
+                if (area != null) ForEachRectangle(area, action);
+            }
+
+            return;
+        }
+
+        ForEachRectangle(range, action);
+    }
+
+    private static void ForEachRectangle(object range, Action<object> action)
+    {
         int rows;
         int columns;
         try
@@ -363,13 +498,37 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
+    private static object? ResolveCell(object? excel, CellFill fill)
+    {
+        if (excel == null || string.IsNullOrEmpty(fill.Sheet) || fill.Row <= 0 || fill.Column <= 0) return null;
+        try
+        {
+            var sheets = Get(excel, "Worksheets");
+            if (sheets == null) return null;
+            var sheet = Invoke(sheets, "Item", fill.Sheet);
+            if (sheet == null) return null;
+            var cells = Get(sheet, "Cells");
+            if (cells == null) return null;
+            return Item(cells, fill.Row, fill.Column);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private sealed class CellFill
     {
         public object Cell { get; set; } = null!;
         public string Key { get; set; } = "";
-        public object? Color { get; set; }
-        public object? ColorIndex { get; set; }
-        public object? Pattern { get; set; }
+        public string Sheet { get; set; } = "";
+        public int Row { get; set; }
+        public int Column { get; set; }
+        public int? Color { get; set; }
+        public int? Pattern { get; set; }
+        public int? ThemeColor { get; set; }
+        public double? TintAndShade { get; set; }
+        public int? PatternColor { get; set; }
         public bool NoFill { get; set; }
     }
 
@@ -404,6 +563,28 @@ internal sealed class ExcelSheetHighlight
         }
 
         return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture));
+    }
+
+    private static object? AreaItem(object areas, int index)
+    {
+        try
+        {
+            return areas.GetType().InvokeMember(
+                "Item",
+                BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance,
+                null,
+                areas,
+                new object[] { index });
+        }
+        catch
+        {
+            return areas.GetType().InvokeMember(
+                "Item",
+                BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance,
+                null,
+                areas,
+                new object[] { index });
+        }
     }
 
     private static object? Item(object range, int row, int column)

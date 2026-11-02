@@ -37,6 +37,8 @@ public partial class ExplorerWindow : Window
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
 
+    public bool IsClosing { get; private set; }
+
     public IntPtr WindowHandle => ExplorerWindowFocus.HandleOf(this);
 
     public ExplorerWindow(ExplorerViewModel viewModel, ExplorerCloseBehavior closeBehavior)
@@ -75,9 +77,8 @@ public partial class ExplorerWindow : Window
                 ExplorerChrome.ValueWidth,
                 ExplorerChrome.LocationWidth);
         }
-        foreach (var row in _viewModel.Rows)
+        foreach (var address in _viewModel.AllNavigationAddresses())
         {
-            var address = !string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.NavigationAddress : row.Location;
             _sheetHighlight.Capture(address);
         }
         _viewModel.PropertyChanged += (_, args) =>
@@ -574,6 +575,8 @@ public partial class ExplorerWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        IsClosing = true;
+        _sheetHighlight.SuspendPaints();
         _sheetHighlight.CloseHighlight();
         _caretHook?.Dispose();
         _caretHook = null;
