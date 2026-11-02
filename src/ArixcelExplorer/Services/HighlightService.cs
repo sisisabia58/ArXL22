@@ -21,12 +21,20 @@ public sealed class HighlightService
 
     public void Apply(string ownerId, string address, string hex)
     {
+        foreach (var part in TraceUtils.SplitAreas(address))
+        {
+            ApplyArea(ownerId, part, hex);
+        }
+    }
+
+    private void ApplyArea(string ownerId, string address, string hex)
+    {
         var range = Resolve(address);
         if (range == null) return;
         var color = ExcelOleColor.FromHex(hex);
         EnsureOwner(ownerId);
 
-        foreach (Excel.Range cell in range.Cells)
+        foreach (var cell in CellsOf(range))
         {
             var key = KeyOf(cell);
             if (!_original.ContainsKey(key))
@@ -126,15 +134,40 @@ public sealed class HighlightService
 
     private void ReleaseAddress(string ownerId, string address)
     {
-        var range = Resolve(address);
-        if (range == null) return;
+        foreach (var part in TraceUtils.SplitAreas(address))
+        {
+            var range = Resolve(part);
+            if (range == null) continue;
+            foreach (var cell in CellsOf(range))
+            {
+                RemoveLayer(ownerId, KeyOf(cell));
+                if (_ownerCells.TryGetValue(ownerId, out var keys))
+                {
+                    keys.Remove(KeyOf(cell));
+                }
+            }
+        }
+    }
+
+    private static IEnumerable<Excel.Range> CellsOf(Excel.Range range)
+    {
+        var areas = range.Areas;
+        if (areas != null && areas.Count > 1)
+        {
+            foreach (Excel.Range area in areas)
+            {
+                foreach (Excel.Range cell in area.Cells)
+                {
+                    yield return cell;
+                }
+            }
+
+            yield break;
+        }
+
         foreach (Excel.Range cell in range.Cells)
         {
-            RemoveLayer(ownerId, KeyOf(cell));
-            if (_ownerCells.TryGetValue(ownerId, out var keys))
-            {
-                keys.Remove(KeyOf(cell));
-            }
+            yield return cell;
         }
     }
 

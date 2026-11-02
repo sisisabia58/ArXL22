@@ -107,31 +107,48 @@ public sealed class ExcelTraceService
     public void NavigateToAddress(string address, bool stealFocus = true, IntPtr reclaimHwnd = default)
     {
         if (string.IsNullOrWhiteSpace(address)) return;
-        var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
-        if (parsed == null) return;
 
-        Excel.Worksheet? sheet = null;
-        foreach (Excel.Worksheet ws in _app.Worksheets)
+        Excel.Range? union = null;
+        Excel.Range? first = null;
+        foreach (var part in TraceUtils.SplitAreas(address))
         {
-            if (string.Equals(ws.Name, parsed.WorksheetName, StringComparison.OrdinalIgnoreCase))
+            var parsed = TraceUtils.ParseWorksheetScopedAddress(part);
+            if (parsed == null) continue;
+            var sheet = FindWorksheet(parsed.WorksheetName);
+            if (sheet == null) continue;
+            Excel.Range target;
+            try
             {
-                sheet = ws;
-                break;
+                target = sheet.Range[parsed.RangeAddress];
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+
+            first ??= target;
+            try
+            {
+                union = union == null ? target : _app.Union(union, target);
+            }
+            catch (Exception)
+            {
+                union ??= target;
             }
         }
 
-        if (sheet == null) return;
+        if (union == null) return;
 
         try
         {
-            var target = sheet.Range[parsed.RangeAddress];
-            if (!ReferenceEquals(_app.ActiveSheet, sheet))
+            var sheet = union.Worksheet as Excel.Worksheet;
+            if (sheet != null && !ReferenceEquals(_app.ActiveSheet, sheet))
             {
                 sheet.Activate();
             }
 
-            target.Select();
-            ScrollRangeIntoView(target);
+            union.Select();
+            ScrollRangeIntoView(first ?? union);
         }
         catch (Exception)
         {
@@ -240,9 +257,25 @@ public sealed class ExcelTraceService
                 : source.DirectDependents as Excel.Range;
             if (links == null) return neighbors;
 
-            foreach (Excel.Range linked in links.Cells)
+            // Areas, not Cells: Cells on a multi-area range walks the rectangle
+            // between the precedents and would treat every cell in between as a hit.
+            var areas = links.Areas;
+            if (areas != null && areas.Count > 1)
             {
-                neighbors.Add(ToTraceCellInfo(linked));
+                foreach (Excel.Range area in areas)
+                {
+                    foreach (Excel.Range linked in area.Cells)
+                    {
+                        neighbors.Add(ToTraceCellInfo(linked));
+                    }
+                }
+            }
+            else
+            {
+                foreach (Excel.Range linked in links.Cells)
+                {
+                    neighbors.Add(ToTraceCellInfo(linked));
+                }
             }
         }
         catch (Exception)

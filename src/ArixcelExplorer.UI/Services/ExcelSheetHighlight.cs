@@ -4,13 +4,15 @@ using System.Globalization;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using ArixcelExplorer.Core.Settings;
+using ArixcelExplorer.Core.Tracing;
 
 namespace ArixcelExplorer.UI.Services;
 
 /// <summary>
-/// Selects a whole dependent or precedent range and paints it. Excel's Goto
-/// during host navigation leaves only the top-left cell selected. Closing the
-/// window restores the interior colors this highlighter changed.
+/// Selects the precedent areas and paints those cells. A multi-area address
+/// such as K21 and V65 is selected and painted as separate areas, not as the
+/// rectangle between them. Closing the window restores the interior colors
+/// this highlighter changed.
 /// </summary>
 internal sealed class ExcelSheetHighlight
 {
@@ -28,9 +30,12 @@ internal sealed class ExcelSheetHighlight
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
-            var range = RangeOf(excel, address!);
-            if (range == null) return;
-            ForEachCell(range, RememberBaseline);
+            foreach (var part in TraceUtils.SplitAreas(address))
+            {
+                var range = RangeOf(excel, part);
+                if (range == null) continue;
+                ForEachCell(range, RememberBaseline);
+            }
         }
         catch
         {
@@ -42,17 +47,38 @@ internal sealed class ExcelSheetHighlight
     {
         if (_closed) return;
         RestoreActive();
-        if (string.IsNullOrWhiteSpace(address)) return;
+        var parts = TraceUtils.SplitAreas(address);
+        if (parts.Count == 0) return;
         try
         {
             var excel = Marshal.GetActiveObject("Excel.Application");
             PreserveSaved(excel, () =>
             {
-                var range = RangeOf(excel, address!);
-                if (range == null) return;
+                var ranges = new List<object>();
+                foreach (var part in parts)
+                {
+                    var range = RangeOf(excel, part);
+                    if (range != null) ranges.Add(range);
+                }
+
+                if (ranges.Count == 0) return;
+                var selection = ranges[0];
+                for (var i = 1; i < ranges.Count; i++)
+                {
+                    try
+                    {
+                        var union = Invoke(excel, "Union", selection, ranges[i]);
+                        if (union != null) selection = union;
+                    }
+                    catch
+                    {
+                        // Paint the areas we could resolve even if Union is unavailable.
+                    }
+                }
+
                 try
                 {
-                    var sheet = Get(range, "Worksheet");
+                    var sheet = Get(ranges[0], "Worksheet");
                     if (sheet != null) Invoke(sheet, "Activate");
                 }
                 catch
@@ -60,25 +86,28 @@ internal sealed class ExcelSheetHighlight
                     // Select still moves to the range when the sheet is already active.
                 }
 
-                Invoke(range, "Select");
-                ScrollWithoutCollapsing(excel, range);
+                Invoke(selection, "Select");
+                ScrollWithoutCollapsing(excel, ranges[0]);
                 var color = ExcelOleColor.FromHex(string.IsNullOrWhiteSpace(hex) ? "#C6E5B3" : hex);
-                ForEachCell(range, cell =>
+                foreach (var range in ranges)
                 {
-                    try
+                    ForEachCell(range, cell =>
                     {
-                        var fill = Find(_baseline, cell) ?? Own(cell);
-                        if (fill == null) return;
-                        var interior = Get(cell, "Interior");
-                        if (interior == null) return;
-                        Set(interior, "Color", color);
-                        _active.Add(fill);
-                    }
-                    catch
-                    {
-                        // Leave a cell unpainted when its interior cannot be changed.
-                    }
-                });
+                        try
+                        {
+                            var fill = Find(_baseline, cell) ?? Own(cell);
+                            if (fill == null) return;
+                            var interior = Get(cell, "Interior");
+                            if (interior == null) return;
+                            Set(interior, "Color", color);
+                            _active.Add(fill);
+                        }
+                        catch
+                        {
+                            // Leave a cell unpainted when its interior cannot be changed.
+                        }
+                    });
+                }
             });
         }
         catch
@@ -321,6 +350,36 @@ internal sealed class ExcelSheetHighlight
 
     private static void ForEachCell(object range, Action<object> action)
     {
+        object? areas = null;
+        var areaCount = 0;
+        try
+        {
+            areas = Get(range, "Areas");
+            areaCount = areas == null ? 0 : Count(Get(areas, "Count"));
+        }
+        catch
+        {
+            areaCount = 0;
+        }
+
+        if (areaCount > 1 && areas != null)
+        {
+            for (var i = 1; i <= areaCount; i++)
+            {
+                object? area = null;
+                try { area = AreaItem(areas, i); }
+                catch { continue; }
+                if (area != null) ForEachRectangle(area, action);
+            }
+
+            return;
+        }
+
+        ForEachRectangle(range, action);
+    }
+
+    private static void ForEachRectangle(object range, Action<object> action)
+    {
         int rows;
         int columns;
         try
@@ -404,6 +463,28 @@ internal sealed class ExcelSheetHighlight
         }
 
         return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture));
+    }
+
+    private static object? AreaItem(object areas, int index)
+    {
+        try
+        {
+            return areas.GetType().InvokeMember(
+                "Item",
+                BindingFlags.GetProperty | BindingFlags.Public | BindingFlags.Instance,
+                null,
+                areas,
+                new object[] { index });
+        }
+        catch
+        {
+            return areas.GetType().InvokeMember(
+                "Item",
+                BindingFlags.InvokeMethod | BindingFlags.Public | BindingFlags.Instance,
+                null,
+                areas,
+                new object[] { index });
+        }
     }
 
     private static object? Item(object range, int row, int column)

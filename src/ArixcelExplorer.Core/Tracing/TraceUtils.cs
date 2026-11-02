@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -318,6 +319,95 @@ public static class TraceUtils
         return $"'{sheet}'!{a1}";
     }
 
+    /// <summary>
+    /// Address Excel should select and paint for an expression.
+    /// Adjacent inputs such as D4 and E4 stay D4:E4. Separated inputs such as
+    /// K21 and V65 stay two areas, so the cells between them are not highlighted.
+    /// </summary>
+    public static string PrecedentUnion(IEnumerable<string?> addresses)
+    {
+        var spans = new List<AreaSpan>();
+        string? sheet = null;
+        var sawSheet = false;
+        foreach (var address in addresses)
+        {
+            if (string.IsNullOrWhiteSpace(address)) continue;
+            foreach (var area in SplitAreas(address))
+            {
+                var parsed = ParseWorksheetScopedAddress(area);
+                var range = parsed?.RangeAddress ?? area.Trim();
+                if (!TryAreaSpan(range, out var span)) continue;
+                var worksheet = parsed?.WorksheetName;
+                if (!sawSheet)
+                {
+                    sheet = worksheet;
+                    sawSheet = true;
+                }
+                else if (!string.Equals(sheet, worksheet, StringComparison.OrdinalIgnoreCase))
+                {
+                    return "";
+                }
+
+                spans.Add(span);
+            }
+        }
+
+        if (spans.Count == 0) return "";
+        if (spans.Count == 1) return QualifySheet(sheet, spans[0].A1);
+        if (FillsBoundingBox(spans)) return BoundingAddress(addresses);
+
+        var parts = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var span in spans)
+        {
+            if (!seen.Add(span.A1)) continue;
+            parts.Add(QualifySheet(sheet, span.A1));
+        }
+
+        if (parts.Count == 0) return "";
+        if (parts.Count == 1) return parts[0];
+        return string.Join(",", parts);
+    }
+
+    public static IReadOnlyList<string> SplitAreas(string? address)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(address)) return result;
+        var current = new System.Text.StringBuilder();
+        var quoted = false;
+        for (var i = 0; i < address!.Length; i++)
+        {
+            var ch = address[i];
+            if (ch == '\'')
+            {
+                current.Append(ch);
+                if (quoted && i + 1 < address.Length && address[i + 1] == '\'')
+                {
+                    current.Append(address[i + 1]);
+                    i++;
+                    continue;
+                }
+
+                quoted = !quoted;
+                continue;
+            }
+
+            if (!quoted && ch == ',')
+            {
+                var part = current.ToString().Trim();
+                if (part.Length > 0) result.Add(part);
+                current.Clear();
+                continue;
+            }
+
+            current.Append(ch);
+        }
+
+        var last = current.ToString().Trim();
+        if (last.Length > 0) result.Add(last);
+        return result;
+    }
+
     public static string FormatTraceFormula(object? value)
     {
         if (value is not string formula) return "";
@@ -393,7 +483,22 @@ public static class TraceUtils
     public static string FormatExplorerLocation(string? location, string originAddress)
     {
         if (string.IsNullOrWhiteSpace(location)) return "";
-        var qualified = QualifyAddress(location ?? "", originAddress);
+        var areas = SplitAreas(location);
+        if (areas.Count == 0) return "";
+        var formatted = new List<string>(areas.Count);
+        foreach (var area in areas)
+        {
+            var one = FormatSingleExplorerLocation(area, originAddress);
+            if (string.IsNullOrEmpty(one)) return "";
+            formatted.Add(one);
+        }
+
+        return string.Join(",", formatted);
+    }
+
+    private static string FormatSingleExplorerLocation(string location, string originAddress)
+    {
+        var qualified = QualifyAddress(location, originAddress);
         var parsed = ParseWorksheetScopedAddress(string.IsNullOrEmpty(qualified) ? location.Trim() : qualified);
         if (parsed == null || !IsRangeAddress(parsed.RangeAddress)) return "";
 
@@ -410,8 +515,9 @@ public static class TraceUtils
 
     public static string VisibleAnchor(string? address)
     {
-        if (string.IsNullOrWhiteSpace(address)) return "";
-        var trimmed = address.Trim();
+        var areas = SplitAreas(address);
+        if (areas.Count == 0) return "";
+        var trimmed = areas[0].Trim();
         var parsed = ParseWorksheetScopedAddress(trimmed);
         var range = parsed?.RangeAddress ?? trimmed;
         if (!IsRangeAddress(range)) return "";
@@ -439,6 +545,83 @@ public static class TraceUtils
     {
         if (IsRangeAddress(trimmed)) return true;
         return Regex.IsMatch(trimmed, @"^[A-Za-z_\\][A-Za-z0-9_.]*$");
+    }
+
+    private readonly struct AreaSpan
+    {
+        public int R1 { get; }
+        public int C1 { get; }
+        public int R2 { get; }
+        public int C2 { get; }
+        public string A1 { get; }
+
+        public AreaSpan(int r1, int c1, int r2, int c2, string a1)
+        {
+            R1 = r1;
+            C1 = c1;
+            R2 = r2;
+            C2 = c2;
+            A1 = a1;
+        }
+    }
+
+    private static bool TryAreaSpan(string range, out AreaSpan span)
+    {
+        span = default;
+        if (!IsRangeAddress(range)) return false;
+        var parts = StripAbsolute(range).Split(':');
+        var start = ParseCellAddress(parts[0]);
+        var end = parts.Length == 2 ? ParseCellAddress(parts[1]) : start;
+        if (start == null || end == null) return false;
+        var r1 = Math.Min(start.Value.Row, end.Value.Row);
+        var r2 = Math.Max(start.Value.Row, end.Value.Row);
+        var c1 = Math.Min(start.Value.Col, end.Value.Col);
+        var c2 = Math.Max(start.Value.Col, end.Value.Col);
+        var a1Start = ColumnLetters(c1) + (r1 + 1).ToString(CultureInfo.InvariantCulture);
+        var a1End = ColumnLetters(c2) + (r2 + 1).ToString(CultureInfo.InvariantCulture);
+        span = new AreaSpan(r1, c1, r2, c2, a1Start == a1End ? a1Start : a1Start + ":" + a1End);
+        return true;
+    }
+
+    private static bool FillsBoundingBox(List<AreaSpan> spans)
+    {
+        var minRow = int.MaxValue;
+        var minCol = int.MaxValue;
+        var maxRow = -1;
+        var maxCol = -1;
+        foreach (var span in spans)
+        {
+            minRow = Math.Min(minRow, span.R1);
+            maxRow = Math.Max(maxRow, span.R2);
+            minCol = Math.Min(minCol, span.C1);
+            maxCol = Math.Max(maxCol, span.C2);
+        }
+
+        var height = (long)maxRow - minRow + 1;
+        var width = (long)maxCol - minCol + 1;
+        if (height <= 0 || width <= 0) return false;
+        var box = height * width;
+        if (box > 8192) return false;
+
+        var covered = new HashSet<(int Row, int Col)>();
+        foreach (var span in spans)
+        {
+            for (var row = span.R1; row <= span.R2; row++)
+            {
+                for (var col = span.C1; col <= span.C2; col++)
+                {
+                    covered.Add((row, col));
+                }
+            }
+        }
+
+        return covered.Count == box;
+    }
+
+    private static string QualifySheet(string? sheet, string a1)
+    {
+        if (string.IsNullOrEmpty(sheet)) return a1;
+        return $"'{sheet}'!{a1}";
     }
 
     private static string StripAbsolute(string range) => range.Replace("$", "");

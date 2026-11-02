@@ -11,7 +11,7 @@ public static class ExplorerLocations
         {
             var addresses = new List<string>();
             CollectReferences(node, addresses);
-            return TraceUtils.BoundingAddress(addresses);
+            return TraceUtils.PrecedentUnion(addresses);
         }
 
         if (node.Kind is FormulaNodeKind.Literal or FormulaNodeKind.Error)

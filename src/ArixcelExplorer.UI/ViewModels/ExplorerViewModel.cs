@@ -445,6 +445,8 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
     {
         var address = SelectedNavigationAddress();
         if (string.IsNullOrWhiteSpace(address)) return RootAddress;
+        var areas = TraceUtils.SplitAreas(address);
+        if (areas.Count > 0) address = areas[0];
         var anchor = TraceUtils.VisibleAnchor(address);
         if (string.IsNullOrEmpty(anchor)) return address;
         var parsed = TraceUtils.ParseWorksheetScopedAddress(address);
