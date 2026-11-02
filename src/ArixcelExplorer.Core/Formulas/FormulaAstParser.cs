@@ -361,11 +361,20 @@ public static class FormulaAstParser
 
         if (index < input.Length && input[index] == '(')
         {
-            var (inner, afterInner) = ParseComparison(input, index + 1, parentId, contextLocation);
+            var open = index;
+            var (inner, afterInner) = ParseComparison(input, open + 1, parentId, contextLocation);
             var close = SkipSpaces(input, afterInner);
             if (close < input.Length && input[close] == ')')
             {
                 close += 1;
+                // Parent operator labels are the source slice between the first and last
+                // child. Without the '(' the power row of 1/(1+$K$21)^V65 becomes 1+$K$21)^V65.
+                inner.SourceStart = open;
+                inner.SourceLength = close - open;
+                if (inner.Kind == FormulaNodeKind.Operator)
+                {
+                    inner.Label = input.Substring(open, close - open);
+                }
             }
 
             inner.ParentId = parentId;

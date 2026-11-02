@@ -189,10 +189,10 @@ public sealed class ExplorerTreeTests
                 "$D$8",
                 "4",
                 "$D$7",
-                "E31>=$D$16",
+                "(E31>=$D$16)",
                 "E31",
                 "$D$16",
-                "E31<=$D$17",
+                "(E31<=$D$17)",
                 "E31",
                 "$D$17"
             },
@@ -258,6 +258,39 @@ public sealed class ExplorerTreeTests
         Assert.Equal("", TraceUtils.PrecedentUnion(new[] { "'S'!D4", "'Other'!E4" }));
         Assert.Equal("K21,V65", TraceUtils.FormatExplorerLocation("'S'!K21,'S'!V65", "'S'!V66"));
         Assert.Equal("K21", TraceUtils.VisibleAnchor("'S'!K21,'S'!V65"));
+    }
+
+    [Fact]
+    public void Power_over_parenthesized_sum_keeps_grouping_parentheses()
+    {
+        const string formula = "=1/(1+$K$21)^V65";
+        const string origin = "'Discounting Factor'!V66";
+        var rows = FormulaAstParser.FlattenVisible(FormulaAstParser.Parse(formula, origin, "0.936585811582"));
+        var labels = rows.Select(DisplayLabel).ToArray();
+
+        Assert.Equal(
+            new[]
+            {
+                "V66",
+                "1/(1+$K$21)^V65",
+                "1",
+                "(1+$K$21)^V65",
+                "(1+$K$21)",
+                "1",
+                "$K$21",
+                "V65"
+            },
+            labels);
+        Assert.DoesNotContain("1+$K$21)^V65", labels);
+
+        foreach (var node in rows.Where(node => node.Kind != FormulaNodeKind.Root && node.SourceLength > 0))
+        {
+            Assert.Equal(node.Label, formula.Substring(node.SourceStart, node.SourceLength));
+        }
+
+        var power = rows.Single(node => node.Label == "(1+$K$21)^V65");
+        Assert.Equal(FormulaNodeKind.Operator, power.Kind);
+        Assert.Equal("'Discounting Factor'!K21,'Discounting Factor'!V65", ExplorerLocations.NavigationAddress(power, origin));
     }
 
     [Fact]
