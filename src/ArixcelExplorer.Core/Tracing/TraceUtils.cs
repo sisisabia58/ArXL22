@@ -74,7 +74,7 @@ public static class TraceUtils
         }
 
         var raw = value.ToString() ?? "";
-        if (raw.Contains("System.Object")) return "";
+        if (raw.Contains("System.Object") || raw.Contains("System.__ComObject")) return "";
         return FormatTraceText(raw);
     }
 
@@ -154,6 +154,7 @@ public static class TraceUtils
     private static string FormatTraceText(string text)
     {
         if (string.IsNullOrEmpty(text)) return "";
+        if (text.Contains("System.__ComObject") || text.Contains("System.Object")) return "";
         if (text == ArrayValue) return text;
         var trimmed = text.Trim();
         if (IsExcelErrorName(trimmed)) return trimmed;

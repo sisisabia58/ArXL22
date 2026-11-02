@@ -37,6 +37,8 @@ public partial class ExplorerWindow : Window
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
 
+    public bool IsClosing { get; private set; }
+
     public IntPtr WindowHandle => ExplorerWindowFocus.HandleOf(this);
 
     public ExplorerWindow(ExplorerViewModel viewModel, ExplorerCloseBehavior closeBehavior)
@@ -574,6 +576,8 @@ public partial class ExplorerWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        IsClosing = true;
+        _sheetHighlight.SuspendPaints();
         _sheetHighlight.CloseHighlight();
         _caretHook?.Dispose();
         _caretHook = null;

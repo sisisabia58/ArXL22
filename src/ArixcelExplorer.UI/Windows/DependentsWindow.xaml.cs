@@ -19,6 +19,8 @@ public partial class DependentsWindow : Window
 
     public ExplorerCloseMode CloseMode { get; private set; } = ExplorerCloseMode.KeepSelection;
 
+    public bool IsClosing { get; private set; }
+
     public IntPtr WindowHandle => ExplorerWindowFocus.HandleOf(this);
 
     public DependentsWindow(DependentsViewModel viewModel, ExplorerCloseBehavior closeBehavior)
@@ -175,6 +177,8 @@ public partial class DependentsWindow : Window
 
     private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
     {
+        IsClosing = true;
+        _sheetHighlight.SuspendPaints();
         _sheetHighlight.CloseHighlight();
         if (_explicitClose) return;
         if (_closeBehavior == ExplorerCloseBehavior.EscNavigatesBack)

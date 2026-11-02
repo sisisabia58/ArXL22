@@ -99,6 +99,14 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
+    public void No_fill_is_excels_xl_none_color_index()
+    {
+        Assert.True(InteriorFill.IsNoFill(-4142));
+        Assert.False(InteriorFill.IsNoFill(6));
+        Assert.False(InteriorFill.IsNoFill(16777215));
+    }
+
+    [Fact]
     public void FormatTraceValue_does_not_emit_system_object_array()
     {
         object[,] block =
@@ -111,6 +119,7 @@ public sealed class ExplorerTreeTests
         Assert.Equal("15", TraceUtils.FormatTraceValue(15d));
         Assert.Equal("", TraceUtils.FormatTraceValue(null));
         Assert.Equal("hello", TraceUtils.FormatTraceValue("hello"));
+        Assert.Equal("", TraceUtils.FormatTraceValue("System.__ComObject"));
         Assert.Equal("15", TraceUtils.FormatTraceValue(new object[] { 15d }));
     }
 

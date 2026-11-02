@@ -9,7 +9,7 @@ namespace ArixcelExplorer.Services;
 public sealed class HighlightService
 {
     private readonly Excel.Application _app;
-    private readonly Dictionary<string, int> _original = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, SavedFill> _original = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<OverlayLayer>> _layers = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, HashSet<string>> _ownerCells = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<string>> _transient = new(StringComparer.OrdinalIgnoreCase);
@@ -39,7 +39,7 @@ public sealed class HighlightService
             var key = KeyOf(cell);
             if (!_original.ContainsKey(key))
             {
-                _original[key] = Convert.ToInt32(cell.Interior.Color);
+                _original[key] = ReadFill(cell);
             }
 
             _ownerCells[ownerId].Add(key);
@@ -118,7 +118,7 @@ public sealed class HighlightService
             try
             {
                 var range = Resolve(pair.Key);
-                if (range != null) range.Interior.Color = pair.Value;
+                if (range != null) WriteFill(range, pair.Value);
             }
             catch
             {
@@ -185,7 +185,7 @@ public sealed class HighlightService
         {
             if (_original.TryGetValue(key, out var original))
             {
-                range.Interior.Color = original;
+                WriteFill(range, original);
                 _original.Remove(key);
             }
 
@@ -246,6 +246,42 @@ public sealed class HighlightService
         }
 
         return null;
+    }
+
+    private static SavedFill ReadFill(Excel.Range cell)
+    {
+        var index = Convert.ToInt32(cell.Interior.ColorIndex);
+        return new SavedFill
+        {
+            NoFill = InteriorFill.IsNoFill(index),
+            Color = Convert.ToInt32(cell.Interior.Color)
+        };
+    }
+
+    private static void WriteFill(Excel.Range cell, SavedFill fill)
+    {
+        if (fill.NoFill)
+        {
+            cell.Interior.ColorIndex = InteriorFill.NoFillColorIndex;
+            try
+            {
+                cell.Interior.Pattern = InteriorFill.NoFillColorIndex;
+            }
+            catch
+            {
+                // ColorIndex already removed the direct fill.
+            }
+
+            return;
+        }
+
+        cell.Interior.Color = fill.Color;
+    }
+
+    private sealed class SavedFill
+    {
+        public bool NoFill { get; set; }
+        public int Color { get; set; }
     }
 
     private static string KeyOf(Excel.Range cell)
