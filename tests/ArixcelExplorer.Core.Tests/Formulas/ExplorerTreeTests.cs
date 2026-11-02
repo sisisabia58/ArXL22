@@ -99,11 +99,28 @@ public sealed class ExplorerTreeTests
     }
 
     [Fact]
-    public void No_fill_is_excels_xl_none_color_index()
+    public void Collapsed_index_still_lists_array_and_row_for_fill_capture()
     {
-        Assert.True(InteriorFill.IsNoFill(-4142));
-        Assert.False(InteriorFill.IsNoFill(6));
-        Assert.False(InteriorFill.IsNoFill(16777215));
+        const string origin = "'S'!K21";
+        var tree = FormulaAstParser.Parse("=INDEX(K22:K24,$K$20)", origin, "0.14");
+        FormulaAstParser.CollapseFunctions(tree);
+        var visible = FormulaAstParser.FlattenVisible(tree).Select(node => node.Label).ToArray();
+        Assert.DoesNotContain(visible, label => label.Contains("K22:K24"));
+
+        var addresses = ExplorerLocations.CollectNavigationAddresses(tree, origin)
+            .Select(address => address.Replace("$", ""))
+            .ToArray();
+        Assert.Contains(addresses, address => address.EndsWith("K22:K24"));
+        Assert.Contains(addresses, address => address.EndsWith("K20"));
+    }
+
+    [Fact]
+    public void No_fill_requires_pattern_xl_none_not_just_color_index()
+    {
+        Assert.True(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, InteriorFill.NoFillColorIndex));
+        Assert.True(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, pattern: null));
+        Assert.False(InteriorFill.IsNoFill(InteriorFill.NoFillColorIndex, pattern: 1));
+        Assert.False(InteriorFill.IsNoFill(6, pattern: 1));
     }
 
     [Fact]

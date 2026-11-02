@@ -251,9 +251,12 @@ public sealed class HighlightService
     private static SavedFill ReadFill(Excel.Range cell)
     {
         var index = Convert.ToInt32(cell.Interior.ColorIndex);
+        int? pattern = null;
+        try { pattern = Convert.ToInt32(cell.Interior.Pattern); }
+        catch { pattern = null; }
         return new SavedFill
         {
-            NoFill = InteriorFill.IsNoFill(index),
+            NoFill = InteriorFill.IsNoFill(index, pattern),
             Color = Convert.ToInt32(cell.Interior.Color)
         };
     }

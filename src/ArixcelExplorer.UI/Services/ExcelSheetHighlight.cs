@@ -262,12 +262,12 @@ internal sealed class ExcelSheetHighlight
         {
             var interior = Get(cell, "Interior");
             if (interior == null) return null;
-            object? colorIndex = null;
-            object? pattern = null;
-            object? color = null;
-            try { colorIndex = Get(interior, "ColorIndex"); } catch { /* optional */ }
-            try { pattern = Get(interior, "Pattern"); } catch { /* optional */ }
-            try { color = Get(interior, "Color"); } catch { /* optional */ }
+            var colorIndex = ReadInt(interior, "ColorIndex");
+            var pattern = ReadInt(interior, "Pattern");
+            var color = ReadInt(interior, "Color");
+            var theme = ReadInt(interior, "ThemeColor");
+            var tint = ReadDouble(interior, "TintAndShade");
+            var patternColor = ReadInt(interior, "PatternColor");
             var sheetObj = Get(cell, "Worksheet");
             var sheet = sheetObj == null ? "" : Get(sheetObj, "Name") as string ?? "";
             return new CellFill
@@ -277,10 +277,12 @@ internal sealed class ExcelSheetHighlight
                 Sheet = sheet,
                 Row = Count(Get(cell, "Row")),
                 Column = Count(Get(cell, "Column")),
-                NoFill = IsNone(colorIndex),
-                ColorIndex = colorIndex,
+                NoFill = InteriorFill.IsNoFill(colorIndex ?? InteriorFill.NoFillColorIndex, pattern),
                 Pattern = pattern,
-                Color = color
+                Color = color,
+                ThemeColor = theme,
+                TintAndShade = tint,
+                PatternColor = patternColor
             };
         }
         catch
@@ -303,19 +305,27 @@ internal sealed class ExcelSheetHighlight
                 return;
             }
 
-            if (fill.Pattern != null)
+            if (fill.Pattern is int pattern)
             {
-                try { Set(interior, "Pattern", fill.Pattern); } catch { /* color still restores */ }
+                try { Set(interior, "Pattern", pattern); } catch { /* color still restores */ }
             }
 
-            if (fill.ColorIndex != null)
+            if (fill.PatternColor is int patternColor)
             {
-                try { Set(interior, "ColorIndex", fill.ColorIndex); } catch { /* use Color */ }
+                try { Set(interior, "PatternColor", patternColor); } catch { /* main color remains */ }
             }
 
-            if (fill.Color != null)
+            if (fill.ThemeColor is int theme)
             {
-                try { Set(interior, "Color", fill.Color); } catch { /* best effort */ }
+                try { Set(interior, "ThemeColor", theme); } catch { /* use RGB color */ }
+                if (fill.TintAndShade is double tint)
+                {
+                    try { Set(interior, "TintAndShade", tint); } catch { /* theme color remains */ }
+                }
+            }
+            else if (fill.Color is int color)
+            {
+                try { Set(interior, "Color", color); } catch { /* best effort */ }
             }
         }
         catch
@@ -324,16 +334,31 @@ internal sealed class ExcelSheetHighlight
         }
     }
 
-    private static bool IsNone(object? value)
+    private static int? ReadInt(object target, string name)
     {
-        if (value == null) return false;
         try
         {
-            return InteriorFill.IsNoFill(Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture)));
+            var value = Get(target, name);
+            if (value == null) return null;
+            return Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture));
         }
         catch
         {
-            return false;
+            return null;
+        }
+    }
+
+    private static double? ReadDouble(object target, string name)
+    {
+        try
+        {
+            var value = Get(target, name);
+            if (value == null) return null;
+            return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -499,9 +524,11 @@ internal sealed class ExcelSheetHighlight
         public string Sheet { get; set; } = "";
         public int Row { get; set; }
         public int Column { get; set; }
-        public object? Color { get; set; }
-        public object? ColorIndex { get; set; }
-        public object? Pattern { get; set; }
+        public int? Color { get; set; }
+        public int? Pattern { get; set; }
+        public int? ThemeColor { get; set; }
+        public double? TintAndShade { get; set; }
+        public int? PatternColor { get; set; }
         public bool NoFill { get; set; }
     }
 

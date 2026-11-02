@@ -5,6 +5,20 @@ namespace ArixcelExplorer.Core.Formulas;
 
 public static class ExplorerLocations
 {
+    public static IReadOnlyList<string> CollectNavigationAddresses(FormulaAstNode root, string rootAddress)
+    {
+        var addresses = new List<string>();
+        void Walk(FormulaAstNode node)
+        {
+            var navigation = NavigationAddress(node, rootAddress);
+            if (!string.IsNullOrWhiteSpace(navigation)) addresses.Add(navigation);
+            foreach (var child in node.Children) Walk(child);
+        }
+
+        Walk(root);
+        return addresses;
+    }
+
     public static string NavigationAddress(FormulaAstNode node, string rootAddress)
     {
         if (node.Kind == FormulaNodeKind.Operator)

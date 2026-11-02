@@ -188,6 +188,12 @@ public sealed class ExplorerViewModel : INotifyPropertyChanged
         }
     }
 
+    public System.Collections.Generic.IReadOnlyList<string> AllNavigationAddresses()
+    {
+        if (_root == null) return new System.Collections.Generic.List<string>();
+        return ExplorerLocations.CollectNavigationAddresses(_root, RootAddress);
+    }
+
     public void SelectRow(int index, bool navigate = true)
     {
         if (index < 0 || index >= Rows.Count) return;

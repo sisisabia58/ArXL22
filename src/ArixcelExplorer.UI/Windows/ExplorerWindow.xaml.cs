@@ -77,9 +77,8 @@ public partial class ExplorerWindow : Window
                 ExplorerChrome.ValueWidth,
                 ExplorerChrome.LocationWidth);
         }
-        foreach (var row in _viewModel.Rows)
+        foreach (var address in _viewModel.AllNavigationAddresses())
         {
-            var address = !string.IsNullOrWhiteSpace(row.NavigationAddress) ? row.NavigationAddress : row.Location;
             _sheetHighlight.Capture(address);
         }
         _viewModel.PropertyChanged += (_, args) =>
